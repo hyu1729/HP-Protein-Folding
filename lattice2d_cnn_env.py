@@ -255,7 +255,8 @@ class Lattice2DCNNEnv(gym.Env):
         """Renders the environment"""
 
         outfile = StringIO() if mode == 'ansi' else sys.stdout
-        desc = self.grid.astype(str)
+        grid_edit = self.grid[(100 - len(self.seq)):(100 + len(self.seq)),(100 - len(self.seq)):(100 + len(self.seq))]
+        desc = grid_edit.astype(str)
 
         # Convert everything to human-readable symbols
         desc[desc == '0'] = '*'
