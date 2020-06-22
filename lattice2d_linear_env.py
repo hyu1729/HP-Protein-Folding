@@ -142,6 +142,20 @@ class Lattice2DLinearEnv(gym.Env):
                                             dtype=int)
         self.last_action = None
         
+        # For DP Algorithms
+        # P represents the transition probabilities of the environment
+        # P[s][a] is a tuple (next_state, reward, done)
+        # nS is the number of states
+        # nA is the number of actions
+        # Denote states by the actions taken to get there (left, straight, up)
+        # Encode them as ternary numbers
+        # Assume the first step is left
+        self.nS = int((3**(len(self.seq)- 1) + 1) / 2)
+        self.nA = 3
+        self.P = [[(0, 0, False) for i in range(self.nA)] for j in range(self.nS)]
+        
+        self.states_dic = {}
+        self.fill_P()
 
     def step(self, action):
         """Updates the current chain with the specified action.
@@ -461,7 +475,7 @@ class Lattice2DLinearEnv(gym.Env):
         self.step(0)
         
         a = 0
-        p = itertools.product(range(3), repeat = len(self.seq) - 1)
+        p = itertools.product(range(3), repeat = len(self.seq) - 2)
         for j in list(p):
             for i in range(len(j)):
                 a = (3 * a + j[i]) % 4
@@ -477,3 +491,46 @@ class Lattice2DLinearEnv(gym.Env):
             a = 0
             
         return maximum, best
+    
+    def fill_P(self):
+        states = [(-1,),]
+        for i in range(len(self.seq) - 1):
+            states += list(itertools.product(range(3), repeat = i))
+
+        states = sorted(states, key = len)
+        self.states_dic = {states[i] : i for i in range(len(states))}
+        
+        self.P[1][0] = (0, 0, False)
+        self.P[1][1] = (0, 0, False)
+        self.P[1][2] = (0, 0, False)
+        
+        for state in states:
+            if state != (-1,):
+                if len(state) < len(self.seq) - 2:
+                    for i in range(3):
+                        a = 0
+                        reward = 0
+                        self.step(a)
+                        for j in range(len(state)):
+                            a = (3 * a + state[j]) % 4
+                            _, _, done, info = self.step(a)
+                            reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
+                        a = (3 * a + i) % 4
+                        _, _, done, info = self.step(a)
+                        reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
+                        self.reset()
+                        self.P[self.states_dic[state]][i] = (self.states_dic[state + (i,)], reward, False)
+                else:
+                    a = 0
+                    reward = 0
+                    self.step(a)
+                    for j in range(len(state)):
+                        a = (3 * a + state[j]) % 4
+                        _, _, done, info = self.step(a)
+                        reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
+                    self.reset()
+                    for i in range(3):
+                        self.P[self.states_dic[state]][i] = (self.states_dic[state], reward, True)
+                       
+    def get_states_dic(self):
+        return self.states_dic
