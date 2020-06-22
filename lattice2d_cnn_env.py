@@ -7,12 +7,16 @@ Implements the 2D Lattice Environment
 import sys
 from math import floor
 from collections import OrderedDict
+from sklearn.metrics.pairwise import euclidean_distances
 import itertools
 
 import gym
 from gym import (spaces, utils, logger)
 import numpy as np
 from six import StringIO
+
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 
 # Human-readable
 ACTION_TO_STR = {
@@ -141,6 +145,21 @@ class Lattice2DCNNEnv(gym.Env):
                                             shape=(1, self.grid_length, self.grid_length,),
                                             dtype=int)
         self.last_action = None
+        
+        # For DP Algorithms
+        # P represents the transition probabilities of the environment
+        # P[s][a] is a tuple (next_state, reward, done)
+        # nS is the number of states
+        # nA is the number of actions
+        # Denote states by the actions taken to get there (left, straight, up)
+        # Encode them as ternary numbers
+        # Assume the first step is left
+        self.nS = int((3**(len(self.seq)- 1) + 1) / 2)
+        self.nA = 3
+        self.P = [[(0, 0, False) for i in range(self.nA)] for j in range(self.nS)]
+        
+        self.states_dic = {}
+        self.fill_P()
 
     def step(self, action):
         """Updates the current chain with the specified action.
@@ -243,6 +262,7 @@ class Lattice2DCNNEnv(gym.Env):
         """Resets the environment"""
         self.state = OrderedDict({(0, 0) : self.seq[0]})
         self.actions = []
+        self.last_action = None
         self.collisions = 0
         self.trapped = 0
         self.grid = np.zeros(shape=(self.grid_length, self.grid_length), dtype=int)
@@ -251,17 +271,18 @@ class Lattice2DCNNEnv(gym.Env):
 
         return np.expand_dims(self.grid, axis = 0)
 
-    def render(self, mode='human'):
+    def draw_config(self, mode='human'):
         """Renders the environment"""
 
         outfile = StringIO() if mode == 'ansi' else sys.stdout
-        grid_edit = self.grid[(100 - len(self.seq)):(100 + len(self.seq)),(100 - len(self.seq)):(100 + len(self.seq))]
+        grid_edit = self.grid[(100 - len(self.seq) + 1):(100 + len(self.seq)),(100 - len(self.seq) + 1):(100 + len(self.seq))]
         desc = grid_edit.astype(str)
-
+        
         # Convert everything to human-readable symbols
         desc[desc == '0'] = '*'
         desc[desc == '1'] = 'H'
         desc[desc == '-1'] = 'P'
+        
 
         # Obtain all x-y indices of elements
         x_free, y_free = np.where(desc == '*')
@@ -441,36 +462,92 @@ class Lattice2DCNNEnv(gym.Env):
         reward = - gibbs_energy
         return int(reward)
     
-    def all_combs(self):
-        '''
-        Tries all possible folds
+   def fill_P(self):
+        states = [(-1,),]
+        for i in range(len(self.seq) - 1):
+            states += list(itertools.product(range(3), repeat = i))
+
+        states = sorted(states, key = len)
+        self.states_dic = {states[i] : i for i in range(len(states))}
         
-        Returns
-        -------
-        list
-            actions leading to best fold of sequence
-        '''
+        self.P[1][0] = (0, 0, False)
+        self.P[1][1] = (0, 0, False)
+        self.P[1][2] = (0, 0, False)
         
-        maximum = 0
-        best = self.actions
+        for state in states:
+            if state != (-1,):
+                if len(state) < len(self.seq) - 2:
+                    for i in range(3):
+                        a = 0
+                        reward = 0
+                        self.step(a)
+                        for j in range(len(state)):
+                            a = (3 * a + state[j]) % 4
+                            _, _, done, info = self.step(a)
+                            reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
+                        a = (3 * a + i) % 4
+                        _, _, done, info = self.step(a)
+                        reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
+                        self.reset()
+                        self.P[self.states_dic[state]][i] = (self.states_dic[state + (i,)], reward, False)
+                else:
+                    a = 0
+                    reward = 0
+                    self.step(a)
+                    for j in range(len(state)):
+                        a = (3 * a + state[j]) % 4
+                        _, _, done, info = self.step(a)
+                        reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
+                    self.reset()
+                    for i in range(3):
+                        self.P[self.states_dic[state]][i] = (self.states_dic[state], reward, True)
+        self.reset()
+                       
+    def get_states_dic(self):
+        return self.states_dic
+    
+    def render(self):
+        ''' Renders the environment '''
+        # Set up plot
+        fig, ax = plt.subplots()
+        plt.axis('scaled')
+        if self.last_action is not None:
+            plt.title('{}'.format(["Left", "Down", "Up", "Right"][self.last_action]))
+        else:
+            plt.title('')
+        bd = 5
+        ax.set_xlim([-0.5 - bd, 0.5 + bd])
+        ax.set_ylim([-0.5 - bd, 0.5 + bd])
         
-        # Can assume WLOG that first step is left 
-        self.step(0)
+        # Plot chain
+        dictlist = list(self.state.items())
+        curr_state = dictlist[0]
+        mol = plt.Circle(curr_state[0], 0.2, color = 'green' if curr_state[1] == 'H' else 'gray', zorder = 1)
+        ax.add_artist(mol)
+        for i in range(1, len(dictlist)):
+            next_state = dictlist[i]
+            xdata = [curr_state[0][0], next_state[0][0]]
+            ydata = [curr_state[0][1], next_state[0][1]]
+            bond = mlines.Line2D(xdata, ydata, color = 'k', zorder = 0)
+            ax.add_line(bond)
+            mol = plt.Circle(next_state[0], 0.2, color = 'green' if next_state[1] == 'H' else 'gray', zorder = 1)
+            ax.add_artist(mol)
+            curr_state = next_state
         
-        a = 0
-        p = itertools.product(range(3), repeat = len(self.seq) - 1)
-        for j in list(p):
-            for i in range(len(j)):
-                a = (3 * a + j[i]) % 4
-                _, _, done, info = self.step(a)
-                reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
-                if reward > maximum:
-                    maximum = reward
-                    best = info['actions']
-                if done:
-                    break   
-            self.reset()
-            self.step(0)
-            a = 0
-            
-        return best
+        # Show H-H bonds
+        ## Compute all pair distances for the bases in the configuration
+        state = []
+        for i in range(len(dictlist)):
+            if dictlist[i][1] == 'H':
+                state.append(dictlist[i][0])
+            else:
+                state.append((-1000, 1000)) #To get rid of P's
+        distances = euclidean_distances(state, state)
+        ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
+        ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
+        bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
+        for (x,y) in zip(*bond_idx):
+            xdata = [state[x][0], state[y][0]]
+            ydata = [state[x][1], state[y][1]]
+            backbone = mlines.Line2D(xdata, ydata, color = 'r', ls = ':', zorder = 1)
+            ax.add_line(backbone)

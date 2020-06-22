@@ -7,12 +7,16 @@ Implements the 2D Lattice Environment
 import sys
 from math import floor
 from collections import OrderedDict
+from sklearn.metrics.pairwise import euclidean_distances
 import itertools
 
 import gym
 from gym import (spaces, utils, logger)
 import numpy as np
 from six import StringIO
+
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 
 # Human-readable
 ACTION_TO_STR = {
@@ -258,6 +262,7 @@ class Lattice2DLinearEnv(gym.Env):
         """Resets the environment"""
         self.state = OrderedDict({(0, 0) : self.seq[0]})
         self.actions = []
+        self.last_action = None
         self.collisions = 0
         self.trapped = 0
         self.grid = np.zeros(shape=(self.grid_length, self.grid_length), dtype=int)
@@ -266,17 +271,18 @@ class Lattice2DLinearEnv(gym.Env):
 
         return self.grid.flatten()
 
-    def render(self, mode='human'):
+    def draw_config(self, mode='human'):
         """Renders the environment"""
 
         outfile = StringIO() if mode == 'ansi' else sys.stdout
-        grid_edit = self.grid[(100 - len(self.seq)):(100 + len(self.seq)),(100 - len(self.seq)):(100 + len(self.seq))]
+        grid_edit = self.grid[(100 - len(self.seq) + 1):(100 + len(self.seq)),(100 - len(self.seq) + 1):(100 + len(self.seq))]
         desc = grid_edit.astype(str)
-
+        
         # Convert everything to human-readable symbols
         desc[desc == '0'] = '*'
         desc[desc == '1'] = 'H'
         desc[desc == '-1'] = 'P'
+        
 
         # Obtain all x-y indices of elements
         x_free, y_free = np.where(desc == '*')
@@ -456,42 +462,6 @@ class Lattice2DLinearEnv(gym.Env):
         reward = - gibbs_energy
         return int(reward)
     
-    def all_combs(self):
-        '''
-        Tries all possible folds
-        
-        Returns
-        -------
-        int
-            Reward
-        list
-            Actions leading to best fold of sequence
-        '''
-        
-        maximum = 0
-        best = self.actions
-        
-        # Can assume WLOG that first step is left 
-        self.step(0)
-        
-        a = 0
-        p = itertools.product(range(3), repeat = len(self.seq) - 2)
-        for j in list(p):
-            for i in range(len(j)):
-                a = (3 * a + j[i]) % 4
-                _, _, done, info = self.step(a)
-                reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
-                if reward > maximum:
-                    maximum = reward
-                    best = info['actions']
-                if done:
-                    break   
-            self.reset()
-            self.step(0)
-            a = 0
-            
-        return maximum, best
-    
     def fill_P(self):
         states = [(-1,),]
         for i in range(len(self.seq) - 1):
@@ -531,6 +501,53 @@ class Lattice2DLinearEnv(gym.Env):
                     self.reset()
                     for i in range(3):
                         self.P[self.states_dic[state]][i] = (self.states_dic[state], reward, True)
+        self.reset()
                        
     def get_states_dic(self):
         return self.states_dic
+    
+    def render(self):
+        ''' Renders the environment '''
+        # Set up plot
+        fig, ax = plt.subplots()
+        plt.axis('scaled')
+        if self.last_action is not None:
+            plt.title('{}'.format(["Left", "Down", "Up", "Right"][self.last_action]))
+        else:
+            plt.title('')
+        bd = 5
+        ax.set_xlim([-0.5 - bd, 0.5 + bd])
+        ax.set_ylim([-0.5 - bd, 0.5 + bd])
+        
+        # Plot chain
+        dictlist = list(self.state.items())
+        curr_state = dictlist[0]
+        mol = plt.Circle(curr_state[0], 0.2, color = 'green' if curr_state[1] == 'H' else 'gray', zorder = 1)
+        ax.add_artist(mol)
+        for i in range(1, len(dictlist)):
+            next_state = dictlist[i]
+            xdata = [curr_state[0][0], next_state[0][0]]
+            ydata = [curr_state[0][1], next_state[0][1]]
+            bond = mlines.Line2D(xdata, ydata, color = 'k', zorder = 0)
+            ax.add_line(bond)
+            mol = plt.Circle(next_state[0], 0.2, color = 'green' if next_state[1] == 'H' else 'gray', zorder = 1)
+            ax.add_artist(mol)
+            curr_state = next_state
+        
+        # Show H-H bonds
+        ## Compute all pair distances for the bases in the configuration
+        state = []
+        for i in range(len(dictlist)):
+            if dictlist[i][1] == 'H':
+                state.append(dictlist[i][0])
+            else:
+                state.append((-1000, 1000)) #To get rid of P's
+        distances = euclidean_distances(state, state)
+        ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
+        ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
+        bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
+        for (x,y) in zip(*bond_idx):
+            xdata = [state[x][0], state[y][0]]
+            ydata = [state[x][1], state[y][1]]
+            backbone = mlines.Line2D(xdata, ydata, color = 'r', ls = ':', zorder = 1)
+            ax.add_line(backbone)
