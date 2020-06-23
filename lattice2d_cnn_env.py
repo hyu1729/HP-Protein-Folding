@@ -512,7 +512,7 @@ class Lattice2DCNNEnv(gym.Env):
         fig, ax = plt.subplots()
         plt.axis('scaled')
         if self.last_action is not None:
-            plt.title('{}'.format(["Left", "Down", "Up", "Right"][self.last_action]))
+            plt.title('{}'.format(["Left", "Up", "Down", "Right"][self.last_action]))
         else:
             plt.title('')
         bd = 5
