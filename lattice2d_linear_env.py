@@ -68,7 +68,7 @@ class Lattice2DLinearEnv(gym.Env):
     """
     metadata = {'render.modes': ['human', 'ansi']}
 
-    def __init__(self, seq, collision_penalty=-2, trap_penalty=0.5):
+    def __init__(self, seq, collision_penalty=-2, trap_penalty=0.5, dp = False):
         """Initializes the lattice
 
         Parameters
@@ -146,20 +146,21 @@ class Lattice2DLinearEnv(gym.Env):
                                             dtype=int)
         self.last_action = None
         
-        # For DP Algorithms
-        # P represents the transition probabilities of the environment
-        # P[s][a] is a tuple (next_state, reward, done)
-        # nS is the number of states
-        # nA is the number of actions
-        # Denote states by the actions taken to get there (left, straight, up)
-        # Encode them as ternary numbers
-        # Assume the first step is left
-        self.nS = int((3**(len(self.seq)- 1) + 1) / 2)
-        self.nA = 3
-        self.P = [[(0, 0, False) for i in range(self.nA)] for j in range(self.nS)]
-        
-        self.states_dic = {}
-        self.fill_P()
+        if dp:
+            # For DP Algorithms
+            # P represents the transition probabilities of the environment
+            # P[s][a] is a tuple (next_state, reward, done)
+            # nS is the number of states
+            # nA is the number of actions
+            # Denote states by the actions taken to get there (left, straight, up)
+            # Encode them as ternary numbers
+            # Assume the first step is left
+            self.nS = int((3**(len(self.seq)- 1) + 1) / 2)
+            self.nA = 3
+            self.P = [[(0, 0, False) for i in range(self.nA)] for j in range(self.nS)]
+
+            self.states_dic = {}
+            self.fill_P()
 
     def step(self, action):
         """Updates the current chain with the specified action.
