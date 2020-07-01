@@ -1,35 +1,40 @@
 import numpy as np
+from copy import deepcopy
+from collections import OrderedDict
+from sklearn.metrics.pairwise import euclidean_distances
 
 ACTION_TO_ARRAY = {
-    0 : np.array([-1, 0]),
-    1 : np.array([0, 1]),
-    2 : np.array([0, -1]),
-    3 : np.array([1, 0])
+    0 : np.array([0, -1]),
+    1 : np.array([-1, 0]),
+    2 : np.array([1, 0]),
+    3 : np.array([0, 1])
 }
 
 POLY_TO_INT = {
-    'H' : 1, 'P' : -1
+    'H' : 1, 'P' : -1, ' ' : 0
 }
 
 class HP2D():
     '''
-    2D Lattice Environment for AGZ MCTS
+    2D Lattice Environment for HP Protein Folding for AlphaGo Zero Algorithm
     '''
     
     def __init__(self, seq, shape):
         self.seq = seq
+        if len(seq) < 5:
+            seq += ' '
         self.shape = shape
         
     def make_state(self):
         state = np.zeros(self.shape)
-        ##FINISH
+        num_channels = self.shape[0]
+        for i in range(6, num_channels):
+            state[i] = np.full((self.shape[1], self.shape[2]), POLY_TO_INT[self.seq[i - 5]])
+        state[0][self.shape[1] // 2][self.shape[2] // 2] = POLY_TO_INT[self.seq[0]]
         return state
     
     def get_pos(self, state):
-        if (state[0] == state[4]).all():
-            return np.argwhere(np.array([state[1] != state[5]]) == True)[0]
-        else:
-            return np.argwhere(np.array([state[0] != state[4]]) == True)[0]     
+        return np.argwhere(np.array([state[0] != state[3]]) == True)[0]     
     
     def stringrep(self, state):
         ''' 
@@ -37,6 +42,27 @@ class HP2D():
         Represent state by actions taken to get there
         '''
         actions = []
+        num_mol = np.count_nonzero(state[0])
+        curr = np.array([self.shape[1] // 2, self.shape[2] // 2])
+        hor_adj = deepcopy(state[1])
+        vert_adj = deepcopy(state[2])        
+        for i in range(num_mol - 1):
+            a = 0
+            if int(hor_adj[(curr + np.array([0, -1]))[0], (curr + np.array([0, -1]))[1]]) == 1:
+                a = 0
+                hor_adj[(curr + np.array([0, -1]))[0], (curr + np.array([0, -1]))[1]] = 0
+            if int(hor_adj[curr[0], curr[1]]) == 1:
+                a = 3
+                hor_adj[curr[0], curr[1]] = 0
+            if int(vert_adj[curr[0], curr[1]]) == 1:
+                a = 2
+                vert_adj[curr[0], curr[1]] = 0
+            if int(vert_adj[(curr + np.array([-1, 0]))[0], (curr + np.array([-1, 0]))[1]]) == 1:
+                a = 1
+                vert_adj[(curr + np.array([-1, 0]))[0], (curr + np.array([-1, 0]))[1]] = 0
+            actions.append(a)
+            curr += ACTION_TO_ARRAY[a]
+                
         actions_str = [str(a) for a in actions]
         return ''.join(actions_str)
     
@@ -44,42 +70,104 @@ class HP2D():
         '''
         Return 0 if not ended, 1 if done
         '''
-        return 1 if state[8][0][0] == 0 else 0
+        if state[6][0][0] == 0:
+            return 1
+        if self.valid_moves(state) == [0,0,0,0]:
+            return 1
+        return 0
         
     def valid_moves(self, state):
         last_pos = np.array(self.get_pos(state)[1:])
         vm = [0, 0, 0, 0]
         for a in range(4):
-            if is_valid(last_pos + ACTION_TO_ARRAY[a], state):
+            if self.is_valid(last_pos + ACTION_TO_ARRAY[a], state):
                 vm[a] = 1
-        return a
+            
+        return vm
     
     def is_valid(self, pos, state):
         '''
         Check if pos is a valid position
         '''
-        if pos not in np.argwhere(np.zeros(state[0].shape) == 0)[0]:
+        if pos not in np.argwhere(np.zeros(state[0].shape) == 0):
             return False
         if state[0][pos[0]][pos[1]] != 0:
-            return False
-        if state[1][pos[0]][pos[1]] != 0:
             return False
         return True
         
     def next_state(self, state, action):
-        ##FINISH
-        num_mol = np.count_nonzero(state[0]) + np.count_nonzero(state[1])
-        if num_mol + len(state) - 8 < len(self.seq):
-            next_mol = POLY_TO_INT[seq[num_mol + 4]]
-        else:
-            next_mol = 0
-        ns = state
-        ns[4:8] = state[0:4]
-        ns[8:-1] = state[9:]
-        ns[-1] = np.full(state[0].shape, next_mol)
-        add_mol = int(state[8][0][0])
+        add_mol = int(state[6][0][0])
         last_pos = np.array(self.get_pos(state)[1:])
         next_pos = last_pos + ACTION_TO_ARRAY[action]
-        ns[(1 - add_mol) // 2][next_pos[0]][next_pos[1]] = 1
-        ### Fill out C_t, B_t
+        if not self.is_valid(next_pos, state):
+            print('Illegal action')
+            return state
+        num_mol = np.count_nonzero(state[0])
+        if num_mol + len(state) - 6 < len(self.seq):
+            next_mol = POLY_TO_INT[self.seq[num_mol + len(state) - 6]]
+        else:
+            next_mol = 0
+        ns = deepcopy(state)
+        ns[3:6] = state[0:3]
+        ns[6:-1] = state[7:]
+        ns[-1] = np.full(state[0].shape, next_mol)
+        
+        ns[0][next_pos[0]][next_pos[1]] = add_mol
+        if action == 0:
+            ns[1][next_pos[0]][next_pos[1]] = 1
+        if action == 3:
+            ns[1][last_pos[0]][last_pos[1]] = 1
+        if action == 2:
+            ns[2][last_pos[0]][last_pos[1]] = 1
+        if action == 1:
+            ns[2][next_pos[0]][next_pos[1]] = 1
         return ns
+    
+    def calc_score(self, state):
+        num_mol = np.count_nonzero(state[0])
+        curr = np.array([self.shape[1] // 2, self.shape[2] // 2])
+        odict = OrderedDict({(curr[0], curr[1]) : self.seq[0]})
+        hor_adj = deepcopy(state[1])
+        vert_adj = deepcopy(state[2])        
+        for i in range(num_mol - 1):
+            a = 0
+            if int(hor_adj[(curr + np.array([0, -1]))[0], (curr + np.array([0, -1]))[1]]) == 1:
+                a = 0
+                hor_adj[(curr + np.array([0, -1]))[0], (curr + np.array([0, -1]))[1]] = 0
+            if int(hor_adj[curr[0], curr[1]]) == 1:
+                a = 3
+                hor_adj[curr[0], curr[1]] = 0
+            if int(vert_adj[curr[0], curr[1]]) == 1:
+                a = 2
+                vert_adj[curr[0], curr[1]] = 0
+            if int(vert_adj[(curr + np.array([-1, 0]))[0], (curr + np.array([-1, 0]))[1]]) == 1:
+                a = 1
+                vert_adj[(curr + np.array([-1, 0]))[0], (curr + np.array([-1, 0]))[1]] = 0
+            curr += ACTION_TO_ARRAY[a]
+            odict.update({(curr[0], curr[1]) : self.seq[i + 1]})
+
+        # Show H-H bonds
+        ## Compute all pair distances for the bases in the configuration
+        state = []
+        dictlist = list(odict.items())
+        for i in range(len(dictlist)):
+            if dictlist[i][1] == 'H':
+                state.append(dictlist[i][0])
+            else:
+                state.append((-1000, 1000)) #To get rid of P's
+        distances = euclidean_distances(state, state)
+        ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
+        ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
+        bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
+        return len(bond_idx[0]) / self.hyp_max()
+    
+    def hyp_max(self):
+        odd = 0
+        even = 0
+        for i in range(len(self.seq)):
+            if self.seq[i] == 'H':
+                if i % 2 == 1:
+                    odd += 1
+                else:
+                    even += 1
+        return 2 * np.minimum(odd, even)

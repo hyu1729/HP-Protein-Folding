@@ -49,6 +49,7 @@ class MCTS():
 
         counts = [x ** (1. / temp) for x in counts]
         counts_sum = float(sum(counts))
+        print(counts_sum)
         probs = [x / counts_sum for x in counts]
         return probs
 
@@ -79,7 +80,7 @@ class MCTS():
 
         if s not in self.Ps:
             # leaf node
-            self.Ps[s], v = self.nnet(state)
+            self.Ps[s], v = self.nnet.predict(state)
             valids = self.env.valid_moves(state)
             self.Ps[s] = self.Ps[s] * valids  # masking invalid moves
             sum_Ps_s = np.sum(self.Ps[s])
@@ -116,7 +117,7 @@ class MCTS():
                     best_act = a
 
         a = best_act
-        next_s, next_player = self.env.next_state(state, a)
+        next_s = self.env.next_state(state, a)
 
         v = self.search(next_s)
 
