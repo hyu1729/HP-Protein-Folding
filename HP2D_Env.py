@@ -1,5 +1,4 @@
 import numpy as np
-from copy import deepcopy
 from collections import OrderedDict
 from sklearn.metrics.pairwise import euclidean_distances
 
@@ -44,8 +43,8 @@ class HP2D():
         actions = []
         num_mol = np.count_nonzero(state[0])
         curr = np.array([self.shape[1] // 2, self.shape[2] // 2])
-        hor_adj = deepcopy(state[1])
-        vert_adj = deepcopy(state[2])        
+        hor_adj = np.copy(state[1])
+        vert_adj = np.copy(state[2])        
         for i in range(num_mol - 1):
             a = 0
             if int(hor_adj[(curr + np.array([0, -1]))[0], (curr + np.array([0, -1]))[1]]) == 1:
@@ -89,7 +88,9 @@ class HP2D():
         '''
         Check if pos is a valid position
         '''
-        if pos not in np.argwhere(np.zeros(state[0].shape) == 0):
+        if pos[0] not in np.argwhere(np.zeros(state[0].shape) == 0):
+            return False
+        if pos[1] not in np.argwhere(np.zeros(state[0].shape) == 0):
             return False
         if state[0][pos[0]][pos[1]] != 0:
             return False
@@ -100,14 +101,15 @@ class HP2D():
         last_pos = np.array(self.get_pos(state)[1:])
         next_pos = last_pos + ACTION_TO_ARRAY[action]
         if not self.is_valid(next_pos, state):
-            print('Illegal action')
+            # print('Illegal action')
+            # print(last_pos, action)
             return state
         num_mol = np.count_nonzero(state[0])
         if num_mol + len(state) - 6 < len(self.seq):
             next_mol = POLY_TO_INT[self.seq[num_mol + len(state) - 6]]
         else:
             next_mol = 0
-        ns = deepcopy(state)
+        ns = np.copy(state)
         ns[3:6] = state[0:3]
         ns[6:-1] = state[7:]
         ns[-1] = np.full(state[0].shape, next_mol)
@@ -125,10 +127,12 @@ class HP2D():
     
     def calc_score(self, state):
         num_mol = np.count_nonzero(state[0])
+        # If trapped: penalty = -(length remaining chain)
+        trapped_penalty = num_mol - len(self.seq)
         curr = np.array([self.shape[1] // 2, self.shape[2] // 2])
         odict = OrderedDict({(curr[0], curr[1]) : self.seq[0]})
-        hor_adj = deepcopy(state[1])
-        vert_adj = deepcopy(state[2])        
+        hor_adj = np.copy(state[1])
+        vert_adj = np.copy(state[2])        
         for i in range(num_mol - 1):
             a = 0
             if int(hor_adj[(curr + np.array([0, -1]))[0], (curr + np.array([0, -1]))[1]]) == 1:
@@ -159,7 +163,9 @@ class HP2D():
         ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
         ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
         bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
-        return len(bond_idx[0]) / self.hyp_max()
+        if self.hyp_max() != 0:
+            return (len(bond_idx[0]) + trapped_penalty) / self.hyp_max()
+        return 0
     
     def hyp_max(self):
         odd = 0
