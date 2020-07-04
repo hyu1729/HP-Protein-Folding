@@ -88,7 +88,7 @@ class ResNetEncoder(nn.Module):
     """
     ResNet encoder composed by increasing different layers with increasing features.
     """
-    def __init__(self, in_channels=3, blocks_sizes=[128], deepths=[2], 
+    def __init__(self, in_channels=3, blocks_sizes=[128], deepths=[20], 
                  activation=nn.ReLU, block=ResNetBasicBlock, *args,**kwargs):
         super().__init__()
         
@@ -111,23 +111,6 @@ class ResNetEncoder(nn.Module):
         x = self.gate(x)
         for block in self.blocks:
             x = block(x)
-        return x
-
-class ResnetDecoder(nn.Module):
-    """
-    This class represents the tail of ResNet. It performs a global pooling and maps the output to the
-    correct class by using a fully connected layer.
-    """
-    def __init__(self, in_features, n_classes):
-        super().__init__()
-        self.avg = nn.AdaptiveAvgPool2d((1, 1))
-        self.decoder = nn.Linear(in_features, n_classes)
-
-    def forward(self, x):
-        x = self.avg(x)
-        x = x.view(x.size(0), -1)
-        print(x.shape)
-        x = self.decoder(x)
         return x
 
 class PolicyNet(nn.Module):
@@ -166,23 +149,11 @@ class ValueNet(nn.Module):
         winning = torch.tanh(self.fc2(x))
         return winning
 
-class ResNet(nn.Module):
-    
-    def __init__(self, in_channels, n_classes, *args, **kwargs):
-        super().__init__()
-        self.encoder = ResNetEncoder(in_channels, *args, **kwargs)
-        self.decoder = ResnetDecoder(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes)
-        
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x)
-        return x
-
 class DualRes(nn.Module):
     
     def __init__(self, in_channels, n_classes, cuda = False, *args, **kwargs):
         super().__init__()
-        self.cuda = cuda
+        self.use_cuda = cuda
         self.encoder = ResNetEncoder(in_channels, *args, **kwargs)
         self.policy = PolicyNet(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes)
         self.value = ValueNet(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes)
@@ -196,8 +167,8 @@ class DualRes(nn.Module):
     
     def predict(self, x):
         x = torch.FloatTensor(x.astype(np.float64))
-        if self.cuda:
-            x = x.contiguous(x).cuda()
+        if self.use_cuda:
+            x = x.contiguous().cuda()
         x = x.view(1,10,31,31)
         self.eval()
         with torch.no_grad():
