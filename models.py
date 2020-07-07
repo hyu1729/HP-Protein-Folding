@@ -121,7 +121,7 @@ class PolicyNet(nn.Module):
         self.conv = nn.Conv2d(inplanes, 1, kernel_size=1)
         self.bn = nn.BatchNorm2d(1)
         self.logsoftmax = nn.LogSoftmax(dim=1)
-        self.fc = nn.Linear(961, outplanes)
+        self.fc = nn.Linear(121, outplanes)
         
 
     def forward(self, x):
@@ -138,7 +138,7 @@ class ValueNet(nn.Module):
         self.outplanes = outplanes
         self.conv = nn.Conv2d(inplanes, 1, kernel_size=1)
         self.bn = nn.BatchNorm2d(1)
-        self.fc1 = nn.Linear(961, 256)
+        self.fc1 = nn.Linear(121, 256)
         self.fc2 = nn.Linear(256, 1)
         
 
@@ -151,10 +151,12 @@ class ValueNet(nn.Module):
 
 class DualRes(nn.Module):
     
-    def __init__(self, in_channels, n_classes, cuda = False, *args, **kwargs):
+    def __init__(self, in_channels, n_classes, cuda = False, tpu = False, dev = None, blocks_size = [128], deepths = [20], *args, **kwargs):
         super().__init__()
         self.use_cuda = cuda
-        self.encoder = ResNetEncoder(in_channels, *args, **kwargs)
+        self.use_tpu = tpu
+        self.dev = dev
+        self.encoder = ResNetEncoder(in_channels, blocks_size = blocks_size, deepths = deepths, *args, **kwargs)
         self.policy = PolicyNet(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes)
         self.value = ValueNet(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes)
         
@@ -166,11 +168,14 @@ class DualRes(nn.Module):
         return pi, v
     
     def predict(self, x):
-        x = torch.FloatTensor(x.astype(np.float64))
+        if self.use_tpu:
+            x = torch.from_numpy(x).to(self.dev)
+        else:
+            x = torch.FloatTensor(x.astype(np.float64))
         if self.use_cuda:
             x = x.contiguous().cuda()
-        x = x.view(1,10,31,31)
+        x = x.view(1,10,11,11)
         self.eval()
         with torch.no_grad():
             pi, v = self.forward(x)
-        return torch.exp(pi).data.cpu().numpy()[0], v.data.cpu().numpy()[0]
+        return pi.data.cpu().numpy()[0], v.data.cpu().numpy()[0]

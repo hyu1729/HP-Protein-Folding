@@ -21,7 +21,7 @@ class HP2D():
     def __init__(self, seq, shape):
         self.seq = seq
         if len(seq) < 5:
-            seq += ' '
+            self.seq += ' '
         self.shape = shape
         
     def make_state(self):
