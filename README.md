@@ -8,4 +8,4 @@ lattice2d_linear_env.py and lattice2d_cnn_env.py are gym environments for linear
 
 The other ipynb notebooks are the different algorithms used.
 
-HP2D_Env and models.py are the docs used for the AlphaZero Algo
+HP2D_Env.py, MCTS.py, and models.py are the docs used for the AlphaZero Algo
