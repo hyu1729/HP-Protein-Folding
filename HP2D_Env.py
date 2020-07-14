@@ -154,7 +154,6 @@ class HP2D():
         ## Compute all pair distances for the bases in the configuration
         state = []
         dictlist = list(odict.items())
-        print(dictlist)
         for i in range(len(dictlist)):
             if dictlist[i][1] == 'H':
                 state.append(dictlist[i][0])
