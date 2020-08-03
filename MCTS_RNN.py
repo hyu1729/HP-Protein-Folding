@@ -27,7 +27,7 @@ class MCTSNode():
             self.avg_Q = self.Q / self.N
             self.parent.update(Q) 
             
-class MCTSS():
+class MCTS_RNN():
     def __init__(self, seq, max_iter, shape):
         self.env = Lattice2DLinearEnv(seq)
         self.seq = seq
@@ -131,5 +131,5 @@ class MCTSS():
         if testenv.hyp_max() != 0:
             reward /= testenv.hyp_max()
         for i in range(len(states)):
-            data += [(states[i], probs[i], reward)]
+            data += [(states[0:(i + 1)], probs[i], reward)]
         return data

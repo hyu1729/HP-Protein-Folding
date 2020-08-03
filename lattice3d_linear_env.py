@@ -16,18 +16,20 @@ import numpy as np
 from six import StringIO
 
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.lines as mlines
 
 # Human-readable
 ACTION_TO_STR = {
-    0 : 'L', 1 : 'D',
-    2 : 'U', 3 : 'R'}
+    0 : 'L', 1 : 'F',
+    2 : 'U', 3 : 'D',
+    4 : 'B', 5 : 'R'}
 
 POLY_TO_INT = {
     'H' : 1, 'P' : -1
 }
 
-class Lattice2DLinearEnv(gym.Env):
+class Lattice3DLinearEnv(gym.Env):
     """A 2-dimensional lattice environment from Dill and Lau, 1989
     [dill1989lattice]_.
 
@@ -126,23 +128,23 @@ class Lattice2DLinearEnv(gym.Env):
                          (trap_penalty, type(trap_penalty)))
             raise
 
-        self.state = OrderedDict({(0, 0) : self.seq[0]})
+        self.state = OrderedDict({(0, 0, 0) : self.seq[0]})
         self.actions = []
         self.collisions = 0
         self.trapped = 0
 
         # Grid attributes
-        self.grid_length = 201 #Maximum seq length 100
-        self.midpoint = (100, 100)
-        self.grid = np.zeros(shape=(self.grid_length, self.grid_length), dtype=int)
+        self.grid_length = 51 #Maximum seq length 25
+        self.midpoint = (25, 25, 25)
+        self.grid = np.zeros(shape=(self.grid_length, self.grid_length, self.grid_length), dtype=int)
 
         # Automatically assign first element into grid
         self.grid[self.midpoint] = POLY_TO_INT[self.seq[0]]
 
         # Define action-observation spaces
-        self.action_space = spaces.Discrete(4)
+        self.action_space = spaces.Discrete(6)
         self.observation_space = spaces.Box(low=-1, high=1,
-                                            shape=(self.grid_length * self.grid_length,),
+                                            shape=(self.grid_length * self.grid_length * self.grid_length,),
                                             dtype=int)
         self.last_action = None
         
@@ -167,12 +169,12 @@ class Lattice2DLinearEnv(gym.Env):
 
         The action supplied by the agent should be an integer from 0
         to 3. In this case:
-            - 0 : left
-            - 1 : down
-            - 2 : up
-            - 3 : right
-        The best way to remember this is to note that they are similar to the
-        'h', 'j', 'k', and 'l' keys in vim.
+            - 0 : left (x, -1)
+            - 1 : forward (y, +1)
+            - 2 : up (z, +1)
+            - 3 : down (z, -1)
+            - 4 : backwards (y, -1)
+            - 5 : right (x, +1)
 
         This method returns a set of values similar to the OpenAI gym, that
         is, a tuple :code:`(observations, reward, done, info)`.
@@ -189,7 +191,7 @@ class Lattice2DLinearEnv(gym.Env):
 
         Parameters
         ----------
-        action : int, {0, 1, 2, 3}
+        action : int, {0, 1, 2, 3, 4, 5}
             Specifies the position where the next polymer will be placed
             relative to the previous one:
                 - 0 : left
@@ -223,9 +225,9 @@ class Lattice2DLinearEnv(gym.Env):
         is_trapped = False # Trap signal
         collision = False  # Collision signal
         # Obtain coordinate of previous polymer
-        x, y = next(reversed(self.state))
+        x, y, z = next(reversed(self.state))
         # Get all adjacent coords and next move based on action
-        adj_coords = self._get_adjacent_coords((x, y))
+        adj_coords = self._get_adjacent_coords((x, y, z))
         next_move = adj_coords[action]
         # Detects for collision or traps in the given coordinate
         idx = len(self.state)
@@ -261,12 +263,12 @@ class Lattice2DLinearEnv(gym.Env):
 
     def reset(self):
         """Resets the environment"""
-        self.state = OrderedDict({(0, 0) : self.seq[0]})
+        self.state = OrderedDict({(0, 0, 0) : self.seq[0]})
         self.actions = []
         self.last_action = None
         self.collisions = 0
         self.trapped = 0
-        self.grid = np.zeros(shape=(self.grid_length, self.grid_length), dtype=int)
+        self.grid = np.zeros(shape=(self.grid_length, self.grid_length, self.grid_length), dtype=int)
         # Automatically assign first element into grid
         self.grid[self.midpoint] = POLY_TO_INT[self.seq[0]]
 
@@ -335,12 +337,14 @@ class Lattice2DLinearEnv(gym.Env):
         dictionary
             All adjacent coordinates
         """
-        x, y = coords
+        x, y, z = coords
         adjacent_coords = {
-            0 : (x - 1, y),
-            1 : (x, y + 1),
-            2 : (x, y - 1),
-            3 : (x + 1, y),
+            0 : (x - 1, y, z),
+            1 : (x, y - 1, z),
+            2 : (x, y, z + 1),
+            3 : (x, y, z - 1),
+            4 : (x, y + 1, z),
+            5 : (x + 1, y, z)
         }
 
         return adjacent_coords
@@ -359,10 +363,10 @@ class Lattice2DLinearEnv(gym.Env):
             Grid of shape :code:`(n, n)` with the chain inside
         """
         for coord, poly in chain.items():
-            trans_x, trans_y = tuple(sum(x) for x in zip(self.midpoint, coord))
+            trans_x, trans_y, trans_z = tuple(sum(x) for x in zip(self.midpoint, coord))
             # Recall that a numpy array works by indexing the rows first
             # before the columns, that's why we interchange.
-            self.grid[(trans_y, trans_x)] = POLY_TO_INT[poly]
+            self.grid[(trans_y, trans_x, trans_z)] = POLY_TO_INT[poly]
 
         return np.flipud(self.grid)
     
@@ -373,15 +377,16 @@ class Lattice2DLinearEnv(gym.Env):
             if dictlist[i][1] == 'H':
                 state.append(dictlist[i][0])
             else:
-                state.append((-1000, 1000)) #To get rid of P's
+                state.append((-1000, 1000, 1000)) #To get rid of P's
         distances = euclidean_distances(state, state)
         ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
         ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
         bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
         
+        state_reward = len(bond_idx[0]) if done else 0
         collision_penalty = self.collision_penalty if collision else 0
         actual_trap_penalty = -floor(len(self.seq) * self.trap_penalty) if is_trapped else 0
-        return len(bond_idx[0]) + collision_penalty + actual_trap_penalty
+        return state_reward + collision_penalty + actual_trap_penalty
     
     def _compute_reward(self, is_trapped, collision, done):
         """Computes the reward for a given time step
@@ -527,29 +532,29 @@ class Lattice2DLinearEnv(gym.Env):
     def render(self):
         ''' Renders the environment '''
         # Set up plot
-        fig, ax = plt.subplots()
-        plt.axis('scaled')
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection = '3d')
+        ax.grid(b = False)
         if self.last_action is not None:
-            plt.title('{}'.format(["Left", "Up", "Down", "Right"][self.last_action]))
+            plt.title('{}'.format(["Left", "Forward", "Backward", "Right", "Up", "Down"][self.last_action]))
         else:
             plt.title('')
-        bd = 5
+        bd = 3
         ax.set_xlim([-0.5 - bd, 0.5 + bd])
         ax.set_ylim([-0.5 - bd, 0.5 + bd])
+        ax.set_zlim([-0.5 - bd, 0.5 + bd])
         
         # Plot chain
         dictlist = list(self.state.items())
         curr_state = dictlist[0]
-        mol = plt.Circle(curr_state[0], 0.2, color = 'green' if curr_state[1] == 'H' else 'gray', zorder = 1)
-        ax.add_artist(mol)
+        ax.scatter(curr_state[0][0], curr_state[0][1], curr_state[0][2], color = 'green' if curr_state[1] == 'H' else 'gray', s = 50)
         for i in range(1, len(dictlist)):
             next_state = dictlist[i]
             xdata = [curr_state[0][0], next_state[0][0]]
             ydata = [curr_state[0][1], next_state[0][1]]
-            bond = mlines.Line2D(xdata, ydata, color = 'k', zorder = 0)
-            ax.add_line(bond)
-            mol = plt.Circle(next_state[0], 0.2, color = 'green' if next_state[1] == 'H' else 'gray', zorder = 1)
-            ax.add_artist(mol)
+            zdata = [curr_state[0][2], next_state[0][2]]
+            ax.plot3D(xdata, ydata, zdata, color = 'k')
+            ax.scatter(next_state[0][0], next_state[0][1], next_state[0][2], color = 'green' if next_state[1] == 'H' else 'gray', s = 50)
             curr_state = next_state
         
         # Show H-H bonds
@@ -559,7 +564,7 @@ class Lattice2DLinearEnv(gym.Env):
             if dictlist[i][1] == 'H':
                 state.append(dictlist[i][0])
             else:
-                state.append((-1000, 1000)) #To get rid of P's
+                state.append((-1000, 1000, 1000)) #To get rid of P's
         distances = euclidean_distances(state, state)
         ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
         ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
@@ -567,5 +572,5 @@ class Lattice2DLinearEnv(gym.Env):
         for (x,y) in zip(*bond_idx):
             xdata = [state[x][0], state[y][0]]
             ydata = [state[x][1], state[y][1]]
-            backbone = mlines.Line2D(xdata, ydata, color = 'r', ls = ':', zorder = 1)
-            ax.add_line(backbone)
+            zdata = [state[x][2], state[y][2]]
+            ax.plot3D(xdata, ydata, zdata, color = 'r', ls = ':')

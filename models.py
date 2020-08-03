@@ -179,3 +179,50 @@ class DualRes(nn.Module):
         with torch.no_grad():
             pi, v = self.forward(x)
         return pi.data.cpu().numpy()[0], v.data.cpu().numpy()[0]
+    
+class RNNEncoder(nn.Module):
+    def __init__(self, in_channels, blocks_size = [128], deepths = [2], *args, **kwargs):
+        super().__init__()
+        self.encoder = ResNetEncoder(in_channels, blocks_size = blocks_size, deepths = deepths, *args, **kwargs)
+        self.conv = nn.Conv2d(self.encoder.blocks[-1].blocks[-1].expanded_channels, 1, kernel_size = 1)
+        self.bn = nn.BatchNorm2d(1)
+        
+    def forward(self, x):
+        x = self.encoder(x)
+        x = F.relu(self.bn(self.conv(x)))
+        x = x.view(x.size(0), -1)
+        return x
+    
+class RNN(nn.Module):
+    def __init__(self, in_channels, n_classes, grid_len, hidden_size, cuda = False):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.use_cuda = cuda
+        self.enc = RNNEncoder(in_channels, blocks_size = [hidden_size])
+        
+        self.i2h = nn.Linear(grid_len * grid_len + hidden_size, hidden_size)
+        self.i2p = nn.Linear(grid_len * grid_len + hidden_size, n_classes)
+        self.i2v = nn.Linear(grid_len * grid_len + hidden_size, 1)
+        self.logSoftmax = nn.LogSoftmax(dim = 1)
+        
+    def forward(self, x, hidden):
+        x = self.enc(x)
+        combined = torch.cat((x, hidden), 1)
+        hidden = self.i2h(combined)
+        p = self.i2p(combined)
+        p = self.logSoftmax(p).exp()
+        v = self.i2v(combined)
+        return p, v, hidden
+    
+    def init_hidden(self):
+        return torch.zeros(1, self.hidden_size)
+    
+    def predict(self, x, hidden):
+        x = torch.FloatTensor(x.astype(np.float64))
+        if self.use_cuda:
+            x = x.contiguous().cuda()
+        x = np.expand_dim(x, 0)
+        self.eval()
+        with torch.no_grad():
+            pi, v, hidden = self.forward(x)
+        return pi.data.cpu().numpy()[0], v.data.cpu().numpy()[0]

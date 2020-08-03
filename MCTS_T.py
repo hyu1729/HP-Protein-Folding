@@ -1,10 +1,11 @@
 from lattice2d_linear_env import Lattice2DLinearEnv
-from HP2D_Env import HP2D
 import numpy as np
 import math
 import random
 
 C = 1.41 # Constant in MCTS exploration
+
+stoid = { "H" : 1, "P" : 0 }
 
 class MCTSNode():
     def __init__(self, state, parent = None):
@@ -27,19 +28,34 @@ class MCTSNode():
             self.avg_Q = self.Q / self.N
             self.parent.update(Q) 
             
-class MCTSS():
-    def __init__(self, seq, max_iter, shape):
+class MCTS_T():
+    def __init__(self, seq, max_iter, max_len):
         self.env = Lattice2DLinearEnv(seq)
         self.seq = seq
         self.max_iter = max_iter
-        self.shape = shape
+        self.max_len = max_len
         
     def get_prob(self, root):
         for i in range(self.max_iter):
             leaf = self.traverse(root)
             sim_result = self.rollout(leaf)
             leaf.update(sim_result)
+            
+        """
+        counts = [root.children[0].N, root.children[1].N, root.children[2].N]
+        
+        if temp == 0:
+            bestAs = np.array(np.argwhere(counts == np.max(counts))).flatten()
+            bestA = np.random.choice(bestAs)
+            probs = [0] * len(counts)
+            probs[bestA] = 1
+            return probs
 
+        counts = [x ** (1. / temp) for x in counts]
+        counts_sum = float(sum(counts))
+        probs = [x / counts_sum for x in counts]
+        return probs
+        """
         return self.best_action(root)
     
     def traverse(self, node):
@@ -83,7 +99,7 @@ class MCTSS():
     
     def best_action(self, node):
         '''
-        Picks child with the highest average reward
+        Picks child with the highest count
         '''
         if len(list(node.children.keys())) == 0:
             action = random.choice(range(3))
@@ -104,32 +120,59 @@ class MCTSS():
         return child
     
     def get_data(self, root):
-        states = []
-        probs = []
-        testenv = HP2D(self.seq, self.shape)
         data = []
-        state = self.env.reset()
-        teststate = testenv.make_state()
+        self.env.reset()
         reward = 0
         a = 0
         traj = [a]
+        n = 1
         while True:
             self.env.reset()
+            print(traj)
             for i in traj:
                 _, reward, done, info = self.env.step(i)
-            states.append(teststate)
-            p = [0,0,0,0]
-            p[a] = 1
-            probs.append(p)
-            teststate = testenv.next_state(teststate, a)
+                reward = self.env.get_reward(info['is_trapped'], info['collisions'])
+            print(reward)
+            if n >= 2:
+                src = [(stoid[self.seq[j]] + 1) for j in range(n + 1)] + [0] * (self.max_len - n - 1)
+                sym_trg = self.get_syms(traj)
+                for t in sym_trg:
+                    ti = np.concatenate((t + np.array([1] * (n)), np.array([0] * (self.max_len - n))), 0)
+                    data += [(src, ti, reward / self.hyp_max())]
+                
             if done:
                 break
             best = self.get_prob(root)
             root = root.children[best]
             a = (3 * a + best) % 4
             traj += [a]
-        if testenv.hyp_max() != 0:
-            reward /= testenv.hyp_max()
-        for i in range(len(states)):
-            data += [(states[i], probs[i], reward)]
+            n += 1
+
         return data
+    
+    def get_syms(self, trg):
+        res = []
+        trg = np.array(trg)
+        t = np.copy(trg)
+        res.append(trg)
+        w1 = np.where(trg == 1)
+        w2 = np.where(trg == 2)
+        t[w1] = 2
+        t[w2] = 1
+        res.append(t)
+        return res
+    
+    def src_pad(self, x):
+        res = np.full()
+        
+    
+    def hyp_max(self):
+        odd = 0
+        even = 0
+        for i in range(len(self.seq)):
+            if self.seq[i] == 'H':
+                if i % 2 == 1:
+                    odd += 1
+                else:
+                    even += 1
+        return 2 * np.minimum(odd, even)

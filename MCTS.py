@@ -80,6 +80,7 @@ class MCTS():
         if s not in self.Ps:
             # leaf node
             self.Ps[s], v = self.nnet.predict(state)
+            self.Ps[s] = 0.75 * self.Ps[s] + 0.25 * np.random.dirichlet((0.03, 0.03, 0.03, 0.03))
             valids = self.env.valid_moves(state)
             self.Ps[s] = self.Ps[s] * valids  # masking invalid moves
             sum_Ps_s = np.sum(self.Ps[s])
