@@ -180,8 +180,8 @@ class DualRes(nn.Module):
             pi, v = self.forward(x)
         return pi.data.cpu().numpy()[0], v.data.cpu().numpy()[0]
     
-class RNNEncoder(nn.Module):
-    def __init__(self, in_channels, blocks_size = [128], deepths = [2], *args, **kwargs):
+class RNNEncoder1(nn.Module):
+    def __init__(self, in_channels, blocks_size = [128], deepths = [1], *args, **kwargs):
         super().__init__()
         self.encoder = ResNetEncoder(in_channels, blocks_size = blocks_size, deepths = deepths, *args, **kwargs)
         self.conv = nn.Conv2d(self.encoder.blocks[-1].blocks[-1].expanded_channels, 1, kernel_size = 1)
@@ -193,12 +193,23 @@ class RNNEncoder(nn.Module):
         x = x.view(x.size(0), -1)
         return x
     
+    
+class RNNEncoder2(nn.Module):
+    def __init__(self, in_channels, hidden_size):
+        super().__init__()
+        self.layers = nn.Sequential(nn.Conv2d(in_channels, hidden_size, kernel_size = 3), nn.BatchNorm2d(1), nn.ReLU())
+        
+    def forward(self, x):
+        x = self.layers(x)
+        return x
+        
+    
 class RNN(nn.Module):
     def __init__(self, in_channels, n_classes, grid_len, hidden_size, cuda = False):
         super().__init__()
         self.hidden_size = hidden_size
         self.use_cuda = cuda
-        self.enc = RNNEncoder(in_channels, blocks_size = [hidden_size])
+        self.enc = RNNEncoder1(in_channels, blocks_size = [hidden_size])
         
         self.i2h = nn.Linear(grid_len * grid_len + hidden_size, hidden_size)
         self.i2p = nn.Linear(grid_len * grid_len + hidden_size, n_classes)
@@ -216,6 +227,40 @@ class RNN(nn.Module):
     
     def init_hidden(self):
         return torch.zeros(1, self.hidden_size)
+    
+    def predict(self, x, hidden):
+        x = torch.FloatTensor(x.astype(np.float64))
+        if self.use_cuda:
+            x = x.contiguous().cuda()
+        x = np.expand_dim(x, 0)
+        self.eval()
+        with torch.no_grad():
+            pi, v, hidden = self.forward(x)
+        return pi.data.cpu().numpy()[0], v.data.cpu().numpy()[0]
+    
+class GRUNet(nn.Module):
+    def __init__(self, in_channels, n_classes, hidden_size, drop_prob = 0.2, cuda = False):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.use_cuda = cuda
+        
+        self.gru = nn.GRU(in_channels, hidden_size, batch_first = True)
+        self.i2p = nn.Linear(hidden_size, n_classes)
+        self.i2v = nn.Linear(hidden_size, 1)
+        self.logSoftmax = nn.LogSoftmax(dim = 1)
+        self.relu = nn.ReLU()
+        
+    def forward(self, x, h):
+        x = torch.flatten(x, start_dim = 2)
+        x = torch.transpose(x, 1, 2)
+        out, h = self.gru(x, h)
+        p = self.i2p(self.relu(out[:, -1]))
+        p = self.logSoftmax(p).exp()
+        v = self.i2v(self.relu(out[:, -1]))
+        return p, v, h
+        
+    def init_hidden(self):
+        return torch.zeros(1, 1, self.hidden_size)
     
     def predict(self, x, hidden):
         x = torch.FloatTensor(x.astype(np.float64))
