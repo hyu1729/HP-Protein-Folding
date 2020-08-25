@@ -23,8 +23,15 @@ DIR_TO_ARRAY = {
     3: np.array([1, 1])
 }
 
+ACTION_TO_DIR = {
+    0: "upper right",
+    1: "upper left",
+    2: "lower left",
+    3: "lower right"
+}
+
 class ChainEnv(gym.Env):
-    def __init__(self, seq):
+    def __init__(self, seq, max_len, grid_len):
         try:
             if not set(seq.upper()) <= set('HP'):
                 raise ValueError("%r (%s) is an invalid sequence" % (seq, type(seq)))
@@ -43,20 +50,21 @@ class ChainEnv(gym.Env):
         self.seq = seq
         self.actions = []
         self.reward = 0
-        self.grid_length = 201
-        self.midpoint = (100, 100)
+        self.max_len = max_len
+        self.grid_length = grid_len
+        self.midpoint = (grid_len // 2, grid_len // 2)
         self.grid = np.zeros(shape = (self.grid_length, self.grid_length), dtype = int)
         
-        self.state = np.full((2, len(seq)), 100) #state[0] = x-coords, state[1] = y-coords, state[:,i] = coords for mol i
+        self.state = np.full((2, len(seq)), grid_len // 2) #state[0] = x-coords, state[1] = y-coords, state[:,i] = coords for mol i
         for i in range(len(seq)):
-            self.state[1][i] = 100 - len(seq) // 2 + i
+            self.state[1][i] = grid_len // 2 - len(seq) // 2 + i
             
         self.prev_state = np.copy(self.state)
         
         for i in range(len(seq)):
             self.grid[self.state[0, i]][self.state[1, i]] = POLY_TO_INT[self.seq[i]]
 
-        self.action_space = spaces.Discrete(4 * len(seq) + 8 + 1)
+        self.action_space = spaces.Discrete(4 * max_len + 9)
         self.observation_space = spaces.Box(low = -1, high = 1, shape = (self.grid_length, self.grid_length,), dtype = int)
         
     def step(self, action):
@@ -67,19 +75,19 @@ class ChainEnv(gym.Env):
         self.actions.append(action)
         np.copyto(self.prev_state, self.state)
         done = False
-        if action == 4 * len(self.seq) + 8: #Stop
+        if action == 4 * self.max_len + 8: #Stop
             done = True
             return (self.grid, self.reward, done, self.actions)
-        elif action >= 4 * len(self.seq) + 4: #For the last mol
-            if action - 4 * len(self.seq) - 4 == 3:
+        elif action >= 4 * self.max_len + 4: #For the last mol
+            if action == 4 * self.max_len + 7:
                 self.state[1][-1] += 2
                 self.state[0][-2] = self.state[0][-1]
                 self.state[1][-2] = self.state[1][-1] - 1
-            elif action - 4 * len(self.seq) - 4 == 2:
+            elif action == 4 * self.max_len + 6:
                 self.state[0][-1] += 2
                 self.state[0][-2] = self.state[0][-1] - 1
                 self.state[1][-2] = self.state[1][-1]
-            elif action - 4 * len(self.seq) - 4 == 1:
+            elif action == 4 * self.max_len + 5:
                 self.state[1][-1] -= 2
                 self.state[0][-2] = self.state[0][-1]
                 self.state[1][-2] = self.state[1][-1] + 1
@@ -94,16 +102,16 @@ class ChainEnv(gym.Env):
                 i -= 1
                 self.state[:,  i] = self.prev_state[:, i + 2]
                 
-        elif action >= 4 * len(self.seq): #For the first mol
-            if action - 4 * len(self.seq) == 3:
+        elif action >= 4 * self.max_len: #For the first mol
+            if action == 4 * self.max_len + 3:
                 self.state[1][0] += 2
                 self.state[0][1] = self.state[0][0]
                 self.state[1][1] = self.state[1][0] - 1
-            elif action - 4 * len(self.seq) == 2:
+            elif action == 4 * self.max_len + 2:
                 self.state[0][0] += 2
                 self.state[0][1] = self.state[0][0] - 1
                 self.state[1][1] = self.state[1][0]
-            elif action - 4 * len(self.seq) == 1:
+            elif action == 4 * self.max_len + 1:
                 self.state[1][0] -= 2
                 self.state[0][1] = self.state[0][0]
                 self.state[1][1] = self.state[1][0] + 1
@@ -184,30 +192,33 @@ class ChainEnv(gym.Env):
         return self.grid        
     
     def valid(self, action):
-        if action > 4 * len(self.seq) + 8:
+        temp = np.copy(self.state)
+        if action > 4 * self.max_len + 8:
             return False
-        elif action == 4 * len(self.seq) + 8: 
+        elif action == 4 * self.max_len + 8: 
             return True
-        elif action == 4 * len(self.seq) + 4 + 3:
+        elif action == 4 * self.max_len + 7:
             return self.grid[self.state[0, -1]][self.state[1, -1] + 2] == 0 and self.grid[self.state[0, -1]][self.state[1, -1] + 1] == 0
-        elif action == 4 * len(self.seq) + 4 + 2:
+        elif action == 4 * self.max_len + 6:
             return self.grid[self.state[0, -1] + 2][self.state[1, -1]] == 0 and self.grid[self.state[0, -1] + 1][self.state[1, -1]] == 0
-        elif action == 4 * len(self.seq) + 4 + 1:
+        elif action == 4 * self.max_len + 5:
             return self.grid[self.state[0, -1]][self.state[1, -1] - 2] == 0 and self.grid[self.state[0, -1]][self.state[1, -1] - 1] == 0
-        elif action == 4 * len(self.seq) + 4 :
+        elif action == 4 * self.max_len + 4:
             return self.grid[self.state[0, -1] - 2][self.state[1, -1]] == 0 and self.grid[self.state[0, -1] - 1][self.state[1, -1]] == 0
-        elif action == 4 * len(self.seq) + 3:
+        elif action == 4 * self.max_len + 3:
             return self.grid[self.state[0, 0]][self.state[1, 0] + 2] == 0 and self.grid[self.state[0, 0]][self.state[1, 0] + 1] == 0
-        elif action == 4 * len(self.seq) + 2:
+        elif action == 4 * self.max_len + 2:
             return self.grid[self.state[0, 0] + 2][self.state[1, 0]] == 0 and self.grid[self.state[0, 0] + 1][self.state[1, 0]] == 0
-        elif action == 4 * len(self.seq) + 1:
+        elif action == 4 * self.max_len + 1:
             return self.grid[self.state[0, 0]][self.state[1, 0] - 2] == 0 and self.grid[self.state[0, 0]][self.state[1, 0] - 1] == 0
-        elif action == 4 * len(self.seq):
+        elif action == 4 * self.max_len:
             return self.grid[self.state[0, 0] - 2][self.state[1, 0]] == 0 and self.grid[self.state[0, 0] - 1][self.state[1, 0]] == 0
+        elif action < 4 * self.max_len and action >= 4 * len(self.seq):
+            return False
         else:
             i = action // 4
             dir = action % 4
-            loc = DIR_TO_ARRAY[dir] + self.prev_state[:, i]
+            loc = DIR_TO_ARRAY[dir] + temp[:, i]
             if self.grid[loc[0]][loc[1]] != 0:
                 return False
             if i == 0:
@@ -217,12 +228,19 @@ class ChainEnv(gym.Env):
             else:
                 return self.is_adj(loc, self.state[:, i - 1]) or self.is_adj(loc, self.state[:, i + 1])
 
+    def valid_moves(self):
+        val = np.zeros(4 * self.max_len + 9)
+        for i in range(4 * self.max_len + 9):
+            if self.valid(i) == True:
+                val[i] = 1
+        return val
+            
     def reset(self):
         self.actions = []
         self.reward = 0
-        self.state = np.full((2, len(self.seq)), 100) #state[0] = x-coords, state[1] = y-coords, state[:,i] = coords for mol i
+        self.state = np.full((2, len(self.seq)), self.grid_length // 2) #state[0] = x-coords, state[1] = y-coords, state[:,i] = coords for mol i
         for i in range(len(self.seq)):
-            self.state[1][i] = 100 - len(self.seq) // 2 + i
+            self.state[1][i] = self.grid_length // 2 - len(self.seq) // 2 + i
             
         self.prev_state = np.copy(self.state)
         return self.grid
@@ -230,24 +248,48 @@ class ChainEnv(gym.Env):
     def render(self):
         ''' Renders the environment '''
         # Set up plot
-        
         state_dict = OrderedDict()
         for i in range(len(self.seq)):
-            state_dict.update({ (int(self.state[1][i]) - 100, 100 - int(self.state[0][i])) : self.seq[i] })
+            state_dict.update({ (int(self.state[1][i]) - self.grid_length // 2, self.grid_length // 2 - int(self.state[0][i])) : self.seq[i] })
         fig, ax = plt.subplots()
         plt.axis('scaled')
         if len(self.actions) != 0:
-            plt.title(self.actions[-1])
-        bd = 7
-        ax.set_xlim([-0.5 - bd, 0.5 + bd])
-        ax.set_ylim([-0.5 - bd, 0.5 + bd])
+            action = self.actions[-1]
+            if action == 4 * self.max_len + 8:
+                plt.title("STOP")
+            elif action == 4 * self.max_len + 7:
+                plt.title("Last position right two")
+            elif action == 4 * self.max_len + 6:
+                plt.title("Last position down two")
+            elif action == 4 * self.max_len + 5:
+                plt.title("Last position left two")
+            elif action == 4 * self.max_len + 4:
+                plt.title("Last position up two")
+            elif action == 4 * self.max_len + 3:
+                plt.title("First position right two")
+            elif action == 4 * self.max_len + 2:
+                plt.title("First position down two")
+            elif action == 4 * self.max_len + 1:
+                plt.title("First position left two")
+            elif action == 4 * self.max_len:
+                plt.title("First position up two")
+            else:
+                i = action // 4
+                dir = action % 4
+                plt.title("Pull position {} {}".format(i + 1, ACTION_TO_DIR[dir]))
+            
+        xmid = (min(self.state[1]) + max(self.state[1])) / 2 - self.grid_length // 2
+        ymid = (min(self.state[0]) + max(self.state[0])) / 2 - self.grid_length // 2
+        bd = len(self.seq) / 2
+        ax.set_xlim([xmid - bd - 0.5 , xmid + bd + 0.5])
+        ax.set_ylim([ymid - bd - 0.5 , ymid + bd + 0.5])
         
         # Plot chain
         dictlist = list(state_dict.items())
         curr_state = dictlist[0]
         mol = plt.Circle(curr_state[0], 0.2, color = 'green' if curr_state[1] == 'H' else 'gray', zorder = 1)
         ax.add_artist(mol)
-        mol = plt.Circle(curr_state[0], 0.2, color = 'blue', fill = False, zorder = 2)
+        mol = plt.Circle(curr_state[0], 0.3, color = 'blue', fill = False, zorder = 2)
         ax.add_artist(mol)
         for i in range(1, len(dictlist)):
             next_state = dictlist[i]
