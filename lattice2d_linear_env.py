@@ -272,56 +272,56 @@ class Lattice2DLinearEnv(gym.Env):
 
         return self.grid.flatten()
 
-    def draw_config(self, mode='human'):
-        """Renders the environment"""
-
-        outfile = StringIO() if mode == 'ansi' else sys.stdout
-        grid_edit = self.grid[(100 - len(self.seq) + 1):(100 + len(self.seq)),(100 - len(self.seq) + 1):(100 + len(self.seq))]
-        desc = grid_edit.astype(str)
-        
-        # Convert everything to human-readable symbols
-        desc[desc == '0'] = '*'
-        desc[desc == '1'] = 'H'
-        desc[desc == '-1'] = 'P'
-        
-
-        # Obtain all x-y indices of elements
-        x_free, y_free = np.where(desc == '*')
-        x_h, y_h = np.where(desc == 'H')
-        x_p, y_p = np.where(desc == 'P')
-
-        # Decode if possible
-        desc.tolist()
-        try:
-            desc = [[c.decode('utf-8') for c in line] for line in desc]
-        except AttributeError:
-            pass
-
-        
-        # All unfilled spaces are gray
-        for unfilled_coords in zip(x_free, y_free):
-            desc[unfilled_coords] = utils.colorize(desc[unfilled_coords], "gray")
-
-        # All hydrophobic molecules are bold-green
-        for hmol_coords in zip(x_h, y_h):
-            desc[hmol_coords] = utils.colorize(desc[hmol_coords], "green")
-
-        # All polar molecules are cyan
-        for pmol_coords in zip(x_p, y_p):
-            desc[pmol_coords] = utils.colorize(desc[pmol_coords], "cyan")
-        
-        # Provide prompt for last action
+    def render(self):
+        ''' Renders the environment '''
+        # Set up plot
+        fig, ax = plt.subplots()
+        plt.axis('scaled')
         if self.last_action is not None:
-            outfile.write("  ({})\n".format(["Left", "Down", "Up", "Right"][self.last_action]))
+            plt.title('{}: {}'.format(len(self.actions), ["Left", "Up", "Down", "Right"][self.last_action]))
         else:
-            outfile.write("\n")
-
-        # Draw desc
-        outfile.write("\n".join(''.join(line) for line in desc)+"\n")
-
-        if mode != 'human':
-            return outfile
-
+            plt.title('0: Starting Position')
+        bd = 5
+        ax.set_xlim([-2.5 - bd, -1.5 + bd])
+        ax.set_ylim([-0.5 - bd, 0.5 + bd])
+        
+        # Plot chain
+        dictlist = list(self.state.items())
+        curr_state = dictlist[0]
+        mol = plt.Circle(curr_state[0], 0.2, color = 'green' if curr_state[1] == 'H' else 'gray', zorder = 1)
+        ax.add_artist(mol)
+        for i in range(1, len(dictlist)):
+            next_state = dictlist[i]
+            xdata = [curr_state[0][0], next_state[0][0]]
+            ydata = [curr_state[0][1], next_state[0][1]]
+            bond = mlines.Line2D(xdata, ydata, color = 'k', zorder = 0)
+            ax.add_line(bond)
+            mol = plt.Circle(next_state[0], 0.2, color = 'green' if next_state[1] == 'H' else 'gray', zorder = 1)
+            ax.add_artist(mol)
+            curr_state = next_state
+        
+        # Show H-H bonds
+        ## Compute all pair distances for the bases in the configuration
+        state = []
+        for i in range(len(dictlist)):
+            if dictlist[i][1] == 'H':
+                state.append(dictlist[i][0])
+            else:
+                state.append((-1000, 1000)) #To get rid of P's
+        distances = euclidean_distances(state, state)
+        ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
+        ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
+        bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
+        for (x,y) in zip(*bond_idx):
+            xdata = [state[x][0], state[y][0]]
+            ydata = [state[x][1], state[y][1]]
+            backbone = mlines.Line2D(xdata, ydata, color = 'r', ls = ':', zorder = 1)
+            ax.add_line(backbone)
+            
+        if len(self.actions) == len(self.seq) - 1:
+            plt.title('{}'.format(self.actions))
+            plt.savefig('{}2DLinear.pdf'.format(self.seq))
+            
     def _get_adjacent_coords(self, coords):
         """Obtains all adjacent coordinates of the current position
 
@@ -367,6 +367,7 @@ class Lattice2DLinearEnv(gym.Env):
         return np.flipud(self.grid)
     
     def get_reward(self, is_trapped, collision):
+        """Alternate implementation of _compute_free_energy"""
         dictlist = list(self.state.items())
         state = []
         for i in range(len(dictlist)):
@@ -481,6 +482,8 @@ class Lattice2DLinearEnv(gym.Env):
         return int(reward)
     
     def fill_P(self):
+        ''' Fills in the array P for DP algorithms (Value & Policy Iteration)'''
+        
         states = [(-1,),]
         for i in range(len(self.seq) - 1):
             states += list(itertools.product(range(3), repeat = i))
@@ -520,52 +523,3 @@ class Lattice2DLinearEnv(gym.Env):
                     for i in range(3):
                         self.P[self.states_dic[state]][i] = (self.states_dic[state], reward, True)
         self.reset()
-                       
-    def get_states_dic(self):
-        return self.states_dic
-    
-    def render(self):
-        ''' Renders the environment '''
-        # Set up plot
-        fig, ax = plt.subplots()
-        plt.axis('scaled')
-        if self.last_action is not None:
-            plt.title('{}'.format(["Left", "Up", "Down", "Right"][self.last_action]))
-        else:
-            plt.title('')
-        bd = 5
-        ax.set_xlim([-0.5 - bd, 0.5 + bd])
-        ax.set_ylim([-0.5 - bd, 0.5 + bd])
-        
-        # Plot chain
-        dictlist = list(self.state.items())
-        curr_state = dictlist[0]
-        mol = plt.Circle(curr_state[0], 0.2, color = 'green' if curr_state[1] == 'H' else 'gray', zorder = 1)
-        ax.add_artist(mol)
-        for i in range(1, len(dictlist)):
-            next_state = dictlist[i]
-            xdata = [curr_state[0][0], next_state[0][0]]
-            ydata = [curr_state[0][1], next_state[0][1]]
-            bond = mlines.Line2D(xdata, ydata, color = 'k', zorder = 0)
-            ax.add_line(bond)
-            mol = plt.Circle(next_state[0], 0.2, color = 'green' if next_state[1] == 'H' else 'gray', zorder = 1)
-            ax.add_artist(mol)
-            curr_state = next_state
-        
-        # Show H-H bonds
-        ## Compute all pair distances for the bases in the configuration
-        state = []
-        for i in range(len(dictlist)):
-            if dictlist[i][1] == 'H':
-                state.append(dictlist[i][0])
-            else:
-                state.append((-1000, 1000)) #To get rid of P's
-        distances = euclidean_distances(state, state)
-        ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
-        ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
-        bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
-        for (x,y) in zip(*bond_idx):
-            xdata = [state[x][0], state[y][0]]
-            ydata = [state[x][1], state[y][1]]
-            backbone = mlines.Line2D(xdata, ydata, color = 'r', ls = ':', zorder = 1)
-            ax.add_line(backbone)

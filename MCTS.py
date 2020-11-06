@@ -1,3 +1,7 @@
+"""
+Implements MCTS for AlphaGo Zero with neural net
+"""
+
 import logging
 import math
 

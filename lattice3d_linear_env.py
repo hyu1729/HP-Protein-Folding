@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Implements the 2D Lattice Environment
+Implements the 3D Lattice Environment
 """
 # Import gym modules
 import sys
@@ -30,12 +30,12 @@ POLY_TO_INT = {
 }
 
 class Lattice3DLinearEnv(gym.Env):
-    """A 2-dimensional lattice environment from Dill and Lau, 1989
+    """A 3-dimensional lattice environment from Dill and Lau, 1989
     [dill1989lattice]_.
 
     It follows an absolute Cartesian coordinate system, the location of
     the polymer is stated independently from one another. Thus, we have
-    four actions (left, right, up, and down) and a chance of collision.
+    six actions (left, right, up, down, forward, and backward) and a chance of collision.
 
     The environment will first place the initial polymer at the origin. Then,
     for each step, agents place another polymer to the lattice. An episode
@@ -157,8 +157,8 @@ class Lattice3DLinearEnv(gym.Env):
             # Denote states by the actions taken to get there (left, straight, up)
             # Encode them as ternary numbers
             # Assume the first step is left
-            self.nS = int((3**(len(self.seq)- 1) + 1) / 2)
-            self.nA = 3
+            self.nS = int((5**(len(self.seq)- 1) + 1) / 2)
+            self.nA = 5
             self.P = [[(0, 0, False) for i in range(self.nA)] for j in range(self.nS)]
 
             self.states_dic = {}
@@ -168,7 +168,7 @@ class Lattice3DLinearEnv(gym.Env):
         """Updates the current chain with the specified action.
 
         The action supplied by the agent should be an integer from 0
-        to 3. In this case:
+        to 5. In this case:
             - 0 : left (x, -1)
             - 1 : forward (y, +1)
             - 2 : up (z, +1)
@@ -195,9 +195,11 @@ class Lattice3DLinearEnv(gym.Env):
             Specifies the position where the next polymer will be placed
             relative to the previous one:
                 - 0 : left
-                - 1 : down
+                - 1 : forward
                 - 2 : up
-                - 3 : right
+                - 3 : down
+                - 4 : backwards
+                - 5 : right
 
         Returns
         -------
@@ -274,55 +276,52 @@ class Lattice3DLinearEnv(gym.Env):
 
         return self.grid.flatten()
 
-    def draw_config(self, mode='human'):
-        """Renders the environment"""
-
-        outfile = StringIO() if mode == 'ansi' else sys.stdout
-        grid_edit = self.grid[(100 - len(self.seq) + 1):(100 + len(self.seq)),(100 - len(self.seq) + 1):(100 + len(self.seq))]
-        desc = grid_edit.astype(str)
-        
-        # Convert everything to human-readable symbols
-        desc[desc == '0'] = '*'
-        desc[desc == '1'] = 'H'
-        desc[desc == '-1'] = 'P'
-        
-
-        # Obtain all x-y indices of elements
-        x_free, y_free = np.where(desc == '*')
-        x_h, y_h = np.where(desc == 'H')
-        x_p, y_p = np.where(desc == 'P')
-
-        # Decode if possible
-        desc.tolist()
-        try:
-            desc = [[c.decode('utf-8') for c in line] for line in desc]
-        except AttributeError:
-            pass
-
-        
-        # All unfilled spaces are gray
-        for unfilled_coords in zip(x_free, y_free):
-            desc[unfilled_coords] = utils.colorize(desc[unfilled_coords], "gray")
-
-        # All hydrophobic molecules are bold-green
-        for hmol_coords in zip(x_h, y_h):
-            desc[hmol_coords] = utils.colorize(desc[hmol_coords], "green")
-
-        # All polar molecules are cyan
-        for pmol_coords in zip(x_p, y_p):
-            desc[pmol_coords] = utils.colorize(desc[pmol_coords], "cyan")
-        
-        # Provide prompt for last action
+    def render(self):
+        ''' Renders the environment '''
+        # Set up plot
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection = '3d')
+        ax.grid(b = False)
+        ax.autoscale(True, 'both')
         if self.last_action is not None:
-            outfile.write("  ({})\n".format(["Left", "Down", "Up", "Right"][self.last_action]))
+            plt.title('{}: {}'.format(len(self.actions), ["Left", "Forward", "Up", "Down", "Backward", "Right"][self.last_action]))
         else:
-            outfile.write("\n")
-
-        # Draw desc
-        outfile.write("\n".join(''.join(line) for line in desc)+"\n")
-
-        if mode != 'human':
-            return outfile
+            plt.title('0: Starting position')
+        bd = 2
+        ax.set_xlim([-0.5 - bd, 0.5 + bd])
+        ax.set_ylim([-0.5 - bd, 0.5 + bd])
+        ax.set_zlim([-0.5 - bd, 0.5 + bd])
+        
+        # Plot chain
+        dictlist = list(self.state.items())
+        curr_state = dictlist[0]
+        ax.scatter(curr_state[0][0], curr_state[0][1], curr_state[0][2], color = 'green' if curr_state[1] == 'H' else 'gray', s = 50)
+        for i in range(1, len(dictlist)):
+            next_state = dictlist[i]
+            xdata = [curr_state[0][0], next_state[0][0]]
+            ydata = [curr_state[0][1], next_state[0][1]]
+            zdata = [curr_state[0][2], next_state[0][2]]
+            ax.plot3D(xdata, ydata, zdata, color = 'k')
+            ax.scatter(next_state[0][0], next_state[0][1], next_state[0][2], color = 'green' if next_state[1] == 'H' else 'gray', s = 50)
+            curr_state = next_state
+        
+        # Show H-H bonds
+        ## Compute all pair distances for the bases in the configuration
+        state = []
+        for i in range(len(dictlist)):
+            if dictlist[i][1] == 'H':
+                state.append(dictlist[i][0])
+            else:
+                state.append((-1000, 1000, 1000)) #To get rid of P's
+        distances = euclidean_distances(state, state)
+        ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
+        ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
+        bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
+        for (x,y) in zip(*bond_idx):
+            xdata = [state[x][0], state[y][0]]
+            ydata = [state[x][1], state[y][1]]
+            zdata = [state[x][2], state[y][2]]
+            ax.plot3D(xdata, ydata, zdata, color = 'r', ls = ':')
 
     def _get_adjacent_coords(self, coords):
         """Obtains all adjacent coordinates of the current position
@@ -370,7 +369,8 @@ class Lattice3DLinearEnv(gym.Env):
 
         return np.flipud(self.grid)
     
-    def get_reward(self, is_trapped, collision):
+    def get_reward(self, is_trapped, collision, done):
+        """Alternate implementation of _compute_free_energy"""
         dictlist = list(self.state.items())
         state = []
         for i in range(len(dictlist)):
@@ -488,7 +488,7 @@ class Lattice3DLinearEnv(gym.Env):
     def fill_P(self):
         states = [(-1,),]
         for i in range(len(self.seq) - 1):
-            states += list(itertools.product(range(3), repeat = i))
+            states += list(itertools.product(range(5), repeat = i))
 
         states = sorted(states, key = len)
         self.states_dic = {states[i] : i for i in range(len(states))}
@@ -496,19 +496,21 @@ class Lattice3DLinearEnv(gym.Env):
         self.P[1][0] = (0, 0, False)
         self.P[1][1] = (0, 0, False)
         self.P[1][2] = (0, 0, False)
+        self.P[1][3] = (0, 0, False)
+        self.P[1][4] = (0, 0, False)
         
         for state in states:
             if state != (-1,):
                 if len(state) < len(self.seq) - 2:
-                    for i in range(3):
+                    for i in range(5):
                         a = 0
                         reward = 0
                         self.step(a)
                         for j in range(len(state)):
-                            a = (3 * a + state[j]) % 4
+                            a = (5 * a + state[j]) % 6
                             _, _, done, info = self.step(a)
                             reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
-                        a = (3 * a + i) % 4
+                        a = (5 * a + i) % 6
                         _, _, done, info = self.step(a)
                         reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
                         self.reset()
@@ -518,59 +520,11 @@ class Lattice3DLinearEnv(gym.Env):
                     reward = 0
                     self.step(a)
                     for j in range(len(state)):
-                        a = (3 * a + state[j]) % 4
+                        a = (5 * a + state[j]) % 6
                         _, _, done, info = self.step(a)
                         reward = self._compute_reward(info['is_trapped'], info['collisions'], done)
                     self.reset()
-                    for i in range(3):
+                    for i in range(5):
                         self.P[self.states_dic[state]][i] = (self.states_dic[state], reward, True)
         self.reset()
-                       
-    def get_states_dic(self):
-        return self.states_dic
     
-    def render(self):
-        ''' Renders the environment '''
-        # Set up plot
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection = '3d')
-        ax.grid(b = False)
-        if self.last_action is not None:
-            plt.title('{}'.format(["Left", "Forward", "Backward", "Right", "Up", "Down"][self.last_action]))
-        else:
-            plt.title('')
-        bd = 3
-        ax.set_xlim([-0.5 - bd, 0.5 + bd])
-        ax.set_ylim([-0.5 - bd, 0.5 + bd])
-        ax.set_zlim([-0.5 - bd, 0.5 + bd])
-        
-        # Plot chain
-        dictlist = list(self.state.items())
-        curr_state = dictlist[0]
-        ax.scatter(curr_state[0][0], curr_state[0][1], curr_state[0][2], color = 'green' if curr_state[1] == 'H' else 'gray', s = 50)
-        for i in range(1, len(dictlist)):
-            next_state = dictlist[i]
-            xdata = [curr_state[0][0], next_state[0][0]]
-            ydata = [curr_state[0][1], next_state[0][1]]
-            zdata = [curr_state[0][2], next_state[0][2]]
-            ax.plot3D(xdata, ydata, zdata, color = 'k')
-            ax.scatter(next_state[0][0], next_state[0][1], next_state[0][2], color = 'green' if next_state[1] == 'H' else 'gray', s = 50)
-            curr_state = next_state
-        
-        # Show H-H bonds
-        ## Compute all pair distances for the bases in the configuration
-        state = []
-        for i in range(len(dictlist)):
-            if dictlist[i][1] == 'H':
-                state.append(dictlist[i][0])
-            else:
-                state.append((-1000, 1000, 1000)) #To get rid of P's
-        distances = euclidean_distances(state, state)
-        ## We can extract the H-bonded pairs by looking at the upper-triangular (triu)
-        ## distance matrix, and taking those = 1, but ignore immediate neighbors (k=2).
-        bond_idx = np.where(np.triu(distances, k=2) == 1.0)    
-        for (x,y) in zip(*bond_idx):
-            xdata = [state[x][0], state[y][0]]
-            ydata = [state[x][1], state[y][1]]
-            zdata = [state[x][2], state[y][2]]
-            ax.plot3D(xdata, ydata, zdata, color = 'r', ls = ':')

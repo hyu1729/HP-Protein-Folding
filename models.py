@@ -1,3 +1,7 @@
+'''
+Dual head residual network used for AlphaGo Zero, also parts of a RNN model (incomplete)
+'''
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

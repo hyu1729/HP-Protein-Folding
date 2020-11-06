@@ -1,3 +1,10 @@
+"""
+Implements the 2D Lattice Environment for AlphaGo Zero MCTS. 
+
+Note that this is distinct from lattice2d_env_linear.py in that it incorporates
+a different structure of the data, as well as a few additional methods
+such as stringrep and hyp_max.
+"""
 import numpy as np
 from collections import OrderedDict
 from sklearn.metrics.pairwise import euclidean_distances

@@ -1,8 +1,8 @@
 """
-MCTS for pretraining for AlphaGo Zero under lattice environment
+MCTS for pretraining for AlphaGo Zero under chain environment **incomplete**
 """
 
-from lattice2d_linear_env import Lattice2DLinearEnv
+from Chain_Env import ChainEnv
 from HP2D_Env import HP2D
 import numpy as np
 import math
@@ -12,7 +12,7 @@ C = 1.41 # Constant in MCTS exploration
 
 class MCTSNode():
     def __init__(self, state, parent = None):
-        self.state = state # state = tuple of ele in (0,1,2) denoting actions taken thus far
+        self.state = state # state = tuple consisting of actions taken so far
         self.Q = 0 # Total reward
         self.N = 0 # Total times state is visited
         self.children = {} # Dict of children: Action : Child
@@ -33,7 +33,7 @@ class MCTSNode():
             
 class MCTSS():
     def __init__(self, seq, max_iter, shape):
-        self.env = Lattice2DLinearEnv(seq)
+        self.env = ChainEnv(seq)
         self.seq = seq
         self.max_iter = max_iter
         self.shape = shape
