@@ -43,12 +43,13 @@ class Chain():
         Shape of the data
         
     """
-    def __init__(self, seq, max_len = 100, grid_len = 201):
+    def __init__(self, seq, max_len = 100, grid_len = 201, max_moves = 100):
         self.seq = seq
         self.env = ChainEnv(seq, max_len, grid_len)
         self.max_len = self.env.max_len
         self.grid_len = self.env.grid_len
         self.shape = (max_len + 2, grid_len, grid_len) #2nd to last channel: # actions so far, last channel: 1 if done
+        self.max_moves = grid_len
         
     def make_state(self):
         """Returns the starting state in the desired data format
@@ -82,7 +83,6 @@ class Chain():
         # convert to 2D rep, then do tostring()
         state2d = np.zeros((self.grid_len, self.grid_len))
         pos = np.nonzero(state)
-        print(pos)
         for i in range(len(self.seq)):
             state2d[pos[1][i]][pos[2][i]] = POLY_TO_INT[self.seq[i]]
         return state2d.tostring()
@@ -91,7 +91,7 @@ class Chain():
         '''
         Return 0 if not ended, 1 if done
         '''
-        return state[-1][0][0] or state[-2][0][0] > len(self.seq) + 2
+        return state[-1][0][0] or state[-2][0][0] > self.max_moves
         
     def valid_moves(self, state):
         """Returns an np.array of valid moves
@@ -112,7 +112,7 @@ class Chain():
         '''
         Check if action is a valid action
         '''
-        locs = np.nonzero(state)[1:]
+        locs = np.nonzero(state[:-2])[1:]
         grid = np.zeros((self.grid_len, self.grid_len))
         for i in range(len(locs[0])):
             grid[locs[0][i]][locs[1][i]] = POLY_TO_INT[self.seq[i]]
@@ -153,8 +153,8 @@ class Chain():
         
     def next_state(self, state, action):
         """Computes the next state given the current state and action"""
-        locs = np.array(np.nonzero(state)[1:])
-        prev_locs = np.array(np.nonzero(state)[1:])
+        locs = np.array(np.nonzero(state[:-2])[1:])
+        prev_locs = np.array(np.nonzero(state[:-2])[1:])
         if action == 4 * self.max_len + 8:
             new_state = np.copy(state)
             new_state[-1] = np.ones((self.grid_len, self.grid_len))
@@ -247,7 +247,6 @@ class Chain():
             else:
                 print("Illegal Move")
                 return state
-        
         new_state = np.zeros_like(state)
         for i in range(len(self.seq)):
             new_state[i][locs[0][i]][locs[1][i]] = POLY_TO_INT[self.seq[i]]
