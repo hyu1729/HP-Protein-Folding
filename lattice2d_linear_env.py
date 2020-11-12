@@ -281,9 +281,13 @@ class Lattice2DLinearEnv(gym.Env):
             plt.title('{}: {}'.format(len(self.actions), ["Left", "Up", "Down", "Right"][self.last_action]))
         else:
             plt.title('0: Starting Position')
-        bd = 5
-        ax.set_xlim([-2.5 - bd, -1.5 + bd])
-        ax.set_ylim([-0.5 - bd, 0.5 + bd])
+        coords = list(self.state.keys())
+        xdiff = max(coords)[0] - min(coords)[0]
+        ydiff = max(coords)[1] - min(coords)[1]
+        xbd = max(1, 5 - xdiff / 2)
+        ybd = max(1, 5 - ydiff / 2)
+        ax.set_xlim([min(coords)[0] - xbd, max(coords)[0] + xbd])
+        ax.set_ylim([min(coords)[1] - ybd, max(coords)[1] + ybd])
         
         # Plot chain
         dictlist = list(self.state.items())
