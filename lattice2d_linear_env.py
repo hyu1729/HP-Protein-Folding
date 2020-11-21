@@ -68,7 +68,7 @@ class Lattice2DLinearEnv(gym.Env):
     """
     metadata = {'render.modes': ['human', 'ansi']}
 
-    def __init__(self, seq, collision_penalty=-2, trap_penalty=0.5, dp = False):
+    def __init__(self, seq, grid_len = 201, collision_penalty=-2, trap_penalty=0.5, dp = False):
         """Initializes the lattice
 
         Parameters
@@ -97,7 +97,7 @@ class Lattice2DLinearEnv(gym.Env):
             raise
 
         try:
-            if len(seq) > 100:
+            if len(seq) > grid_len // 2:
                 raise ValueError("%r (%s) must have length <= 100" % (seq, type(seq)))
         except AttributeError:
             logger.error("%r (%s) must be of type 'str'" % (seq, type(seq)))
@@ -132,8 +132,8 @@ class Lattice2DLinearEnv(gym.Env):
         self.trapped = 0
 
         # Grid attributes
-        self.grid_length = 201 #Maximum seq length 100
-        self.midpoint = (100, 100)
+        self.grid_length = grid_len #Maximum seq length 100
+        self.midpoint = (grid_len // 2, grid_len // 2)
         self.grid = np.zeros(shape=(self.grid_length, self.grid_length), dtype=int)
 
         # Automatically assign first element into grid
@@ -142,7 +142,7 @@ class Lattice2DLinearEnv(gym.Env):
         # Define action-observation spaces
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Box(low=-1, high=1,
-                                            shape=(self.grid_length * self.grid_length,),
+                                            shape=(2 * self.grid_length * self.grid_length,),
                                             dtype=int)
         self.last_action = None
         
@@ -256,8 +256,11 @@ class Lattice2DLinearEnv(gym.Env):
             'is_trapped'   : is_trapped,
             'state_chain'  : self.state
         }
+        loc = np.zeros((self.grid_length, self.grid_length))
+        x, y = next(reversed(self.state))
+        loc[y + self.grid_length // 2, x + self.grid_length // 2] = 1
 
-        return (grid.flatten(), reward, done, info)
+        return (np.append(grid.flatten(),loc.flatten()), reward, done, info)
 
     def reset(self):
         """Resets the environment"""
@@ -269,8 +272,12 @@ class Lattice2DLinearEnv(gym.Env):
         self.grid = np.zeros(shape=(self.grid_length, self.grid_length), dtype=int)
         # Automatically assign first element into grid
         self.grid[self.midpoint] = POLY_TO_INT[self.seq[0]]
+        
+        loc = np.zeros((self.grid_length, self.grid_length))
+        x, y = next(reversed(self.state))
+        loc[y + self.grid_length // 2, x + self.grid_length // 2] = 1
 
-        return self.grid.flatten()
+        return np.append(self.grid.flatten(), loc.flatten())
 
     def render(self):
         ''' Renders the environment '''
