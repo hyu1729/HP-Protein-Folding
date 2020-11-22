@@ -279,7 +279,7 @@ class Lattice2DLinearEnv(gym.Env):
 
         return np.append(self.grid.flatten(), loc.flatten())
 
-    def render(self):
+    def render(self, save = False):
         ''' Renders the environment '''
         # Set up plot
         fig, ax = plt.subplots()
@@ -329,7 +329,7 @@ class Lattice2DLinearEnv(gym.Env):
             backbone = mlines.Line2D(xdata, ydata, color = 'r', ls = ':', zorder = 1)
             ax.add_line(backbone)
             
-        if len(self.actions) == len(self.seq) - 1:
+        if save and len(self.actions) == len(self.seq) - 1:
             plt.title('{}'.format(self.actions))
             plt.savefig('{}2DLinear.pdf'.format(self.seq))
             

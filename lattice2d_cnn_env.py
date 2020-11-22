@@ -68,7 +68,7 @@ class Lattice2DCNNEnv(gym.Env):
     """
     metadata = {'render.modes': ['human', 'ansi']}
 
-    def __init__(self, seq, collision_penalty=-2, trap_penalty=0.5):
+    def __init__(self, seq, grid_len = 201, collision_penalty=-2, trap_penalty=0.5, dp = False):
         """Initializes the lattice
 
         Parameters
@@ -132,8 +132,8 @@ class Lattice2DCNNEnv(gym.Env):
         self.trapped = 0
 
         # Grid attributes
-        self.grid_length = 201 #Maximum seq length 100
-        self.midpoint = (100, 100)
+        self.grid_length = grid_len #Maximum seq length 100
+        self.midpoint = (grid_len // 2, grid_len // 2)
         self.grid = np.zeros(shape=(self.grid_length, self.grid_length), dtype=int)
 
         # Automatically assign first element into grid
@@ -142,7 +142,7 @@ class Lattice2DCNNEnv(gym.Env):
         # Define action-observation spaces
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Box(low=-1, high=1,
-                                            shape=(1, self.grid_length, self.grid_length,),
+                                            shape=(2, self.grid_length, self.grid_length,),
                                             dtype=int)
         self.last_action = None
         
@@ -256,8 +256,11 @@ class Lattice2DCNNEnv(gym.Env):
             'is_trapped'   : is_trapped,
             'state_chain'  : self.state
         }
+        loc = np.zeros((self.grid_length, self.grid_length))
+        x, y = next(reversed(self.state))
+        loc[y + self.grid_length // 2, x + self.grid_length // 2] = 1
 
-        return (np.expand_dims(grid, axis = 0), reward, done, info)
+        return (np.stack((grid, loc)), reward, done, info)
 
     def reset(self):
         """Resets the environment"""
@@ -270,7 +273,11 @@ class Lattice2DCNNEnv(gym.Env):
         # Automatically assign first element into grid
         self.grid[self.midpoint] = POLY_TO_INT[self.seq[0]]
 
-        return np.expand_dims(self.grid, axis = 0)
+        loc = np.zeros((self.grid_length, self.grid_length))
+        x, y = next(reversed(self.state))
+        loc[y + self.grid_length // 2, x + self.grid_length // 2] = 1
+        
+        return np.stack((self.grid, loc))
 
     def draw_config(self, mode='human'):
         """Renders the environment"""
@@ -463,7 +470,7 @@ class Lattice2DCNNEnv(gym.Env):
         reward = - gibbs_energy
         return int(reward)
     
-   def fill_P(self):
+    def fill_P(self):
         states = [(-1,),]
         for i in range(len(self.seq) - 1):
             states += list(itertools.product(range(3), repeat = i))
@@ -507,15 +514,15 @@ class Lattice2DCNNEnv(gym.Env):
     def get_states_dic(self):
         return self.states_dic
     
-    def render(self):
+    def render(self, save = False):
         ''' Renders the environment '''
         # Set up plot
         fig, ax = plt.subplots()
         plt.axis('scaled')
         if self.last_action is not None:
-            plt.title('{}'.format(["Left", "Up", "Down", "Right"][self.last_action]))
+            plt.title('{}: {}'.format(len(self.actions), ["Left", "Up", "Down", "Right"][self.last_action]))
         else:
-            plt.title('')
+            plt.title('0: Starting Position')
         bd = 5
         ax.set_xlim([-0.5 - bd, 0.5 + bd])
         ax.set_ylim([-0.5 - bd, 0.5 + bd])
@@ -552,3 +559,7 @@ class Lattice2DCNNEnv(gym.Env):
             ydata = [state[x][1], state[y][1]]
             backbone = mlines.Line2D(xdata, ydata, color = 'r', ls = ':', zorder = 1)
             ax.add_line(backbone)
+            
+        if save and len(self.actions) == len(self.seq) - 1:
+            plt.title('{}'.format(self.actions))
+            plt.savefig('{}2DCNN.pdf'.format(self.seq))
