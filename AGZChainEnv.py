@@ -15,10 +15,12 @@ POLY_TO_INT = {
 }
 
 DIR_TO_ARRAY = {
-    0: np.array([-1, 1]),
-    1: np.array([-1, -1]),
-    2: np.array([1, -1]),
-    3: np.array([1, 1])
+    0  : np.array([-1, 1]),
+    1  : np.array([-1, -1]),
+    2  : np.array([1, -1]),
+    3  : np.array([1, 1]),
+    -2 : np.array([1, -1]),
+    -1 : np.array([1, 1])
 }
 
 
@@ -108,6 +110,9 @@ class Chain():
     def is_adj(self, x, y):
         return True if abs(np.sum(x[0] - y[0])) + abs(np.sum(x[1] - y[1])) == 1 else False
     
+    def fourth_vertex(self, x, y, z):
+        return np.array([x[0] ^ y[0] ^ z[0], x[1] ^ y[1] ^ z[1]])
+    
     def is_valid(self, action, state):
         '''
         Check if action is a valid action
@@ -148,8 +153,16 @@ class Chain():
                 return self.is_adj(loc, np.array([locs[0][1], locs[1][1]]))
             elif i == len(self.seq) - 1:
                 return self.is_adj(loc, np.array([locs[0][-2], locs[1][-2]]))
+            elif self.is_adj(loc, np.array([locs[0][i - 1], locs[1][i - 1]])):
+                if self.is_adj(loc, np.array([locs[0][i + 1], locs[1][i + 1]])):
+                    return True
+                loc2 = self.fourth_vertex(loc, np.array([locs[0][i - 1], locs[1][i - 1]]), np.array([locs[0][i], locs[1][i]]))
+                return grid[loc2[0]][loc2[1]] == 0
+            elif self.is_adj(loc, np.array([locs[0][i + 1], locs[1][i + 1]])):
+                loc2 = self.fourth_vertex(loc, np.array([locs[0][i + 1], locs[1][i + 1]]), np.array([locs[0][i], locs[1][i]]))
+                return grid[loc2[0]][loc2[1]] == 0
             else:
-                return self.is_adj(loc, np.array([locs[0][i - 1], locs[1][i - 1]])) or self.is_adj(loc, np.array([locs[0][i + 1], locs[1][i + 1]]))
+                return False
         
     def next_state(self, state, action):
         """Computes the next state given the current state and action"""

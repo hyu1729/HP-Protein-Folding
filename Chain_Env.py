@@ -302,6 +302,25 @@ class ChainEnv(gym.Env):
         """
         return True if abs(np.sum(x[0] - y[0])) + abs(np.sum(x[1] - y[1])) == 1 else False
     
+    def fourth_vertex(self, x, y, z):
+        """Helper function that returns last vertex of a square given 3
+        
+        Parameters
+        ----------
+        x : np.array
+            First coordinate
+        y : np.array
+            Second coordinate
+        z : np.array
+            Third coordinate
+            
+        Returns
+        -------
+        np.array
+            Fourth coordinate
+        """
+        return np.array([x[0] ^ y[0] ^ z[0], x[1] ^ y[1] ^ z[1]])
+    
     def update_grid(self):
         """Helper function that fills the grid with the current state"""
         self.grid = np.zeros(shape = (self.grid_len, self.grid_len), dtype = int)
@@ -343,9 +362,17 @@ class ChainEnv(gym.Env):
                 return self.is_adj(loc, self.state[:, 1])
             elif i == len(self.seq) - 1:
                 return self.is_adj(loc, self.state[:, -2])
+            elif self.is_adj(loc, self.state[:, i - 1]):
+                if self.is_adj(loc, self.state[:, i + 1]):
+                    return True
+                loc2 = self.fourth_vertex(loc, self.state[:, i - 1], self.state[:, i])
+                return self.grid[loc2[0]][loc2[1]] == 0
+            elif self.is_adj(loc, self.state[:, i + 1]):
+                loc2 = self.fourth_vertex(loc, self.state[:, i + 1], self.state[:, i])
+                return self.grid[loc2[0]][loc2[1]] == 0
             else:
-                return self.is_adj(loc, self.state[:, i - 1]) or self.is_adj(loc, self.state[:, i + 1])
-
+                return False
+            
     def valid_moves(self):
         """Returns an np.array of valid moves
         
@@ -403,7 +430,7 @@ class ChainEnv(gym.Env):
         else: 
             plt.title("0: Starting Position")
         xmid = (min(self.state[1]) + max(self.state[1])) / 2 - self.grid_len // 2
-        ymid = (min(self.state[0]) + max(self.state[0])) / 2 - self.grid_len // 2
+        ymid = -(min(self.state[0]) + max(self.state[0])) / 2 + self.grid_len // 2
         bd = len(self.seq) / 2
         ax.set_xlim([xmid - bd - 0.5 , xmid + bd + 0.5])
         ax.set_ylim([ymid - bd + 0.5 , ymid + bd + 1.5])

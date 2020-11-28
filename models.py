@@ -118,14 +118,14 @@ class ResNetEncoder(nn.Module):
         return x
 
 class PolicyNet(nn.Module):
-    def __init__(self, inplanes, outplanes):
+    def __init__(self, inplanes, outplanes, grid_len = 201):
         super(PolicyNet, self).__init__()
         self.outplanes = outplanes
         self.inplanes = inplanes
         self.conv = nn.Conv2d(inplanes, 1, kernel_size=1)
         self.bn = nn.BatchNorm2d(1)
         self.logsoftmax = nn.LogSoftmax(dim=1)
-        self.fc = nn.Linear(121, outplanes)
+        self.fc = nn.Linear(grid_len * grid_len, outplanes)
         
 
     def forward(self, x):
@@ -137,12 +137,12 @@ class PolicyNet(nn.Module):
         return probas
 
 class ValueNet(nn.Module):
-    def __init__(self, inplanes, outplanes):
+    def __init__(self, inplanes, outplanes, grid_len = 201):
         super(ValueNet, self).__init__()
         self.outplanes = outplanes
         self.conv = nn.Conv2d(inplanes, 1, kernel_size=1)
         self.bn = nn.BatchNorm2d(1)
-        self.fc1 = nn.Linear(121, 256)
+        self.fc1 = nn.Linear(grid_len * grid_len, 256)
         self.fc2 = nn.Linear(256, 1)
         
 
@@ -155,14 +155,16 @@ class ValueNet(nn.Module):
 
 class DualRes(nn.Module):
     
-    def __init__(self, in_channels, n_classes, cuda = False, tpu = False, dev = None, blocks_size = [128], deepths = [20], *args, **kwargs):
+    def __init__(self, in_channels, n_classes, grid_len = 201, cuda = False, tpu = False, dev = None, blocks_size = [128], deepths = [20], *args, **kwargs):
         super().__init__()
         self.use_cuda = cuda
         self.use_tpu = tpu
         self.dev = dev
+        self.in_channels = in_channels
+        self.grid_len = grid_len
         self.encoder = ResNetEncoder(in_channels, blocks_size = blocks_size, deepths = deepths, *args, **kwargs)
-        self.policy = PolicyNet(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes)
-        self.value = ValueNet(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes)
+        self.policy = PolicyNet(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes, grid_len)
+        self.value = ValueNet(self.encoder.blocks[-1].blocks[-1].expanded_channels, n_classes, grid_len)
         
         
     def forward(self, x):
@@ -178,7 +180,7 @@ class DualRes(nn.Module):
             x = torch.FloatTensor(x.astype(np.float64))
         if self.use_cuda:
             x = x.contiguous().cuda()
-        x = x.view(1,10,11,11)
+        x = x.view(1, self.in_channels, self.grid_len, self.grid_len)
         self.eval()
         with torch.no_grad():
             pi, v = self.forward(x)
